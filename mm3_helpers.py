@@ -2616,6 +2616,149 @@ def foci_lap(img, img_foci, cell, t):
 
     return disp_l, disp_w, foci_h
 
+def foci_lap_peak(img, img_foci, fov_id, peak_id, t):
+    # define parameters for foci finding
+    minsig = params['foci_log_minsig']
+    maxsig = params['foci_log_maxsig']
+    thresh = params['foci_log_thresh']
+    peak_med_ratio = params['foci_log_peak_med_ratio']
+
+    # test
+    #print ("minsig={:d}  maxsig={:d}  thres={:.4g}  peak_med_ratio={:.2g}".format(minsig,maxsig,thresh,peak_med_ratio))
+    # test
+
+    # calculate median cell intensity. Used to filter foci
+    img_foci_masked = np.copy(img_foci).astype(np.float)
+    fl_median = np.nanmedian(img_foci_masked)
+    fl_mean = np.nanmean(img_foci_masked)
+
+    # subtract this value from the cell
+    if False:
+        img_foci = img_foci.astype('int32') - fl_median.astype('int32')
+        img_foci[img_foci < 0] = 0
+        img_foci = img_foci.astype('uint16')
+
+    # int_mask = np.zeros(img_foci.shape, np.uint8)
+    # avg_int = cv2.mean(img_foci, mask=int_mask)
+    # avg_int = avg_int[0]
+
+    # find blobs using difference of gaussian
+    over_lap = .95 # if two blobs overlap by more than this fraction, smaller blob is cut
+    numsig = (maxsig - minsig + 1) # number of division to consider between min ang max sig
+    blobs = blob_log(img_foci, min_sigma=minsig, max_sigma=maxsig,
+                     overlap=over_lap, num_sigma=numsig, threshold=thresh)
+
+    # these will hold information about foci position temporarily
+    x_blob, y_blob, r_blob = [], [], []
+    x_gaus, y_gaus, w_gaus = [], [], []
+
+    # loop through each potential foci
+    for blob in blobs:
+        yloc, xloc, sig = blob # x location, y location, and sigma of gaus
+        xloc = int(xloc) # switch to int for slicing images
+        yloc = int(yloc)
+        radius = int(np.ceil(np.sqrt(2)*sig)) # will be used to slice out area around foci
+
+
+        x_blob.append(xloc) # for plotting
+        y_blob.append(yloc) # for plotting
+        r_blob.append(radius)
+
+        # cut out a small image from original image to fit gaussian
+        gfit_area = img_foci[yloc-radius:yloc+radius, xloc-radius:xloc+radius]
+        # gfit_area_0 = img_foci[max(0, yloc-1*radius):min(img_foci.shape[0], yloc+1*radius),
+        #                        max(0, xloc-1*radius):min(img_foci.shape[1], xloc+1*radius)]
+
+        # fit gaussian to proposed foci in small box
+        p = fitgaussian(gfit_area)
+        (peak_fit, x_fit, y_fit, w_fit) = p
+
+        # print('peak', peak_fit)
+        if x_fit <= 0 or x_fit >= radius*2 or y_fit <= 0 or y_fit >= radius*2:
+            if params['debug_foci']: print('Throw out foci (gaus fit not in gfit_area)')
+            continue
+        elif peak_fit/fl_median < peak_med_ratio:
+            if params['debug_foci']: print('Peak does not pass height test.')
+            continue
+        else:
+            # find x and y position relative to the whole image (convert from small box)
+            x_rel = int(xloc - radius + x_fit)
+            y_rel = int(yloc - radius + y_fit)
+            x_gaus = np.append(x_gaus, x_rel) # for plotting
+            y_gaus = np.append(y_gaus, y_rel) # for plotting
+            w_gaus = np.append(w_gaus, w_fit) # for plotting
+
+    # draw foci on image for quality control
+    if params['debug_foci']:
+        outputdir = os.path.join(params['ana_dir'], 'debug_foci')
+        if not os.path.isdir(outputdir):
+            os.makedirs(outputdir)
+
+        # print(np.min(gfit_area), np.max(gfit_area), gfit_median, avg_int, peak)
+        # processing of image
+        fig = plt.figure(figsize=(12,12))
+        ax = fig.add_subplot(1,5,1)
+        plt.title('fluor image')
+        plt.imshow(img_foci, interpolation='nearest', cmap='gray')
+        ax = fig.add_subplot(1,5,2)
+        ax.set_title('segmented image')
+        ax.imshow(img, interpolation='nearest', cmap='gray')
+
+        ax = fig.add_subplot(1,5,3)
+        ax.set_title('DoG blobs')
+        ax.imshow(img_foci, interpolation='nearest', cmap='gray')
+        # add circles for where the blobs are
+        for i, spot in enumerate(x_blob):
+            foci_center = Ellipse([x_blob[i], y_blob[i]], r_blob[i], r_blob[i],
+                                  color=(1.0, 1.0, 0), linewidth=2, fill=False, alpha=0.5)
+            ax.add_patch(foci_center)
+
+        # show the shape of the gaussian for recorded foci
+        ax = fig.add_subplot(1,5,4)
+        ax.set_title('final foci')
+        ax.imshow(img_foci, interpolation='nearest', cmap='gray')
+        # print foci that pass and had gaussians fit
+        for i, spot in enumerate(x_gaus):
+            foci_ellipse = Ellipse([x_gaus[i], y_gaus[i]], w_gaus[i], w_gaus[i],
+                                    color=(0, 1.0, 0.0), linewidth=2, fill=False, alpha=0.5)
+            ax.add_patch(foci_ellipse)
+
+        ax = fig.add_subplot(1,5,5)
+        ax.set_title('overlay')
+        ax.imshow(img, interpolation='nearest', cmap='gray')
+        # print foci that pass and had gaussians fit
+        for i, spot in enumerate(x_gaus):
+            foci_ellipse = Ellipse([x_gaus[i], y_gaus[i]], 3, 3,
+                                    color=(1.0, 1.0, 0), linewidth=2, fill=False, alpha=0.5)
+            ax.add_patch(foci_ellipse)
+
+        #plt.show()
+        filename = 'foci_f{:03d}p{:04d}t{:04d}.pdf'.format(fov_id,peak_id,t)
+        fileout = os.path.join(outputdir,filename)
+        fig.tight_layout()
+        fig.savefig(fileout, bbox_inches='tight', pad_inches=0)
+        print (fileout)
+        plt.close('all')
+        nblobs = len(blobs)
+        print ("nblobs = {:d}".format(nblobs))
+
+    # img_overlay = img
+    # for i, spot in enumerate(xx):
+    #     y_temp = int(yy[i])
+    #     x_temp = int(xx[i])
+    #
+    #     img_overlay[y_temp-1,x_temp-1] = 12
+    #     img_overlay[y_temp-1,x_temp] = 12
+    #     img_overlay[y_temp-1,x_temp+1] = 12
+    #     img_overlay[y_temp,x_temp-1] = 12
+    #     img_overlay[y_temp,x_temp] = 12
+    #     img_overlay[y_temp,x_temp+1] = 12
+    #     img_overlay[y_temp+1,x_temp-1] = 12
+    #     img_overlay[y_temp+1,x_temp] = 12
+    #     img_overlay[y_temp+1,x_temp+1] = 12
+
+    return
+
 # finds best fit for 2d gaussian using functin above
 def fitgaussian(data):
     """Returns (height, x, y, width_x, width_y)

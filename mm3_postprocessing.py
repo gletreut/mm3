@@ -114,6 +114,18 @@ def get_lineages_mother_cells(cells):
 
     return lineages
 
+def get_lineages_all_cells(cells):
+    lineages = []
+    for key in cells:
+        cell = cells[key]
+
+        if (np.all([not (keyd in cells) for keyd in cell.daughters])):
+            lineage = make_lineage([key],cells)
+            lineage.reverse() # put oldest first
+            lineages.append(lineage)
+
+    return lineages
+
 def select_lineages(lineages, min_gen):
     selection = []
     for lin in lineages:
@@ -276,6 +288,7 @@ def _todict(matobj):
         else:
             dict[strg] = elem
     return dict
+
 ################################################
 # main
 ################################################
@@ -286,7 +299,7 @@ if __name__ == "__main__":
     parser.add_argument('--trunc',  nargs=2, metavar='t', type=int, help='Make a truncated pkl file for debugging purpose.')
     parser.add_argument('--nofilters',  action='store_true', help='Disable the filters.')
     parser.add_argument('--nocomputations',  action='store_true', help='Disable the computation of extra-quantities.')
-    parser.add_argument('--textify',  action='store_false', help='Export text versions of cell attributes and lineage information.')
+    parser.add_argument('--notextify',  action='store_true', help='Export text versions of cell attributes and lineage information.')
     parser.add_argument('-c', '--cellcycledir',  metavar='picked', type=str, help='Directory containing all Matlab files (lineages) with cell cycle information.')
     parser.add_argument('--complete_cc',  action='store_true', help='If passed, remove cells not mapped to cell cycle through a initiation --> division correspondence.')
     namespace = parser.parse_args(sys.argv[1:])
@@ -303,6 +316,7 @@ if __name__ == "__main__":
     # first initialization of parameters
     params = allparams['filters']
 
+    suffix = ["processed"]
 ################################################
 # Make test set
 ################################################
@@ -362,90 +376,7 @@ if __name__ == "__main__":
 
             ncells = len(data)
             print "ncells = {:d}".format(ncells)
-
-################################################
-# filters
-################################################
-    if not namespace.nofilters:
-        # Remove cells without mother or without daughters
-        print print_time(), "Removing cells without mother or daughters..."
-        data_new = {}
-        for key in data:
-            cell = data[key]
-            if (cell.parent != None) and (cell.daughters != None):
-                data_new[key] = cell
-        data = data_new
-
-        ncells = len(data)
-        print "ncells = {:d}".format(ncells)
-
-        # cutoffs filtering
-        print print_time(), "Applying cutoffs filtering..."
-        if ('cutoffs' in params):
-            data = filter_cells(data, params['cutoffs'])
-
-        ncells = len(data)
-        print "ncells = {:d}".format(ncells)
-
-        # Generation index
-        print print_time(), "Selecting cell indexes..."
-        try:
-            labels_selection=params['cell_generation_index']
-            print "Labels: ", labels_selection
-            data = filter_by_generation_index(data, labels=labels_selection)
-            ncells = len(data)
-            print "ncells = {:d}".format(ncells)
-
-        except KeyError:
-            print "Not applied."
-
-        # FOVs and peaks
-        print print_time(), "Selecting by FOVs and peaks..."
-        try:
-            fovpeak = params['fovpeak']
-            data = filter_by_fovs_peaks(data, fovpeak)
-            ncells = len(data)
-            print "ncells = {:d}".format(ncells)
-
-        except KeyError:
-            print "Not applied."
-
-        # continuous lineages
-        ## list all lineages
-        print print_time(), "Selecting by continuous lineages..."
-        lineages = get_lineages_mother_cells(data)
-        bname = "{}_lineages.pkl".format(dataname)
-        fileout = os.path.join(ddir,bname)
-        with open(fileout,'w') as fout:
-            pkl.dump(lineages, fout)
-        print "{:<20s}{:<s}".format("fileout",fileout)
-
-        ## keep only long enough lineages
-        try:
-            lineages = select_lineages(lineages, **params['lineages']['args'])
-            bname = "{}_lineages_selection_min{:d}.pkl".format(dataname, params['lineages']['args']['min_gen'])
-            fileout = os.path.join(ddir,bname)
-            with open(fileout,'w') as fout:
-                pkl.dump(lineages, fout)
-            print "{:<20s}{:<s}".format("fileout",fileout)
-        except KeyError:
-            pass
-
-        try:
-            if bool(params['lineages']['keep_continuous_only']):
-                selection = []
-                for lin in lineages:
-                    selection += lin
-                selection = np.unique(selection)
-                data_new = {key: data[key] for key in selection}
-                data = data_new
-                ncells = len(data)
-                print "ncells = {:d}".format(ncells)
-        except KeyError, e :
-            print e
-
-        for key in data:
-            cell = data[key]
+            suffix.append("completecc")
 
 ################################################
 # compute extra-quantities
@@ -454,6 +385,7 @@ if __name__ == "__main__":
     if (not namespace.nocomputations):
         print print_time(), "Compute extra-quantities..."
         # cell cycle quantities
+        ## general
         for key in data.keys():
             cell = data[key]
             try:
@@ -466,6 +398,25 @@ if __name__ == "__main__":
                 cell.C = None
                 cell.D = None
                 cell.taucyc = None
+            if cell.unit_size is None:
+                cell.unit_size = np.nan
+
+        ## initiation adder
+        for key in data.keys():
+            cellm = data[key]
+            daughters = [mykey for mykey in cellm.daughters if mykey in data.keys()]
+            tab = [mykey for mykey in daughters if np.median(data[mykey].labels) == np.median(cellm.labels)]
+
+            s01 = cellm.unit_size
+            if len(tab) == 0:
+                s02 = np.nan
+                cellm.delta_initiation = np.nan
+            else:
+                keyd = tab[0]
+                s02 = data[keyd].unit_size
+                f = cell.sd / data[keyd].sb # factor of 2 when the daugher at birth is exactly half the mother at division
+                f = 2
+                cellm.delta_initiation = s02*f - s01
 
         # other quantities
         if ('computations' in allparams):
@@ -515,9 +466,99 @@ if __name__ == "__main__":
                 cell = data[key]
                 try:
                     cell.tmid = 0.5*(cell.birth_time + cell.division_time)
-                except AttributeError:
-                    pass
+                except (AttributeError,TypeError):
+                    cell.tmid = None
 
+
+################################################
+# filters
+################################################
+    if not namespace.nofilters:
+        suffix.append("filtered")
+        params = allparams['filters']
+        # Remove cells without mother or without daughters
+        print print_time(), "Removing cells without mother or daughters..."
+        data_new = {}
+        for key in data:
+            cell = data[key]
+            if (cell.parent != None) and (cell.daughters != None):
+                data_new[key] = cell
+        data = data_new
+
+        ncells = len(data)
+        print "ncells = {:d}".format(ncells)
+        suffix += ["complete"]
+
+        # Generation index
+        print print_time(), "Selecting cell indexes..."
+        try:
+            labels_selection=params['cell_generation_index']
+            print "Labels: ", labels_selection
+            data = filter_by_generation_index(data, labels=labels_selection)
+            ncells = len(data)
+            print "ncells = {:d}".format(ncells)
+            suffix += ["labels" + "".join(["{:d}".format(l) for l in labels_selection])]
+        except KeyError:
+            print "Not applied."
+
+        # FOVs and peaks
+        print print_time(), "Selecting by FOVs and peaks..."
+        try:
+            fovpeak = params['fovpeak']
+            data = filter_by_fovs_peaks(data, fovpeak)
+            ncells = len(data)
+            print "ncells = {:d}".format(ncells)
+            suffix += ["fovpeak"]
+
+        except KeyError:
+            print "Not applied."
+
+        # continuous lineages
+        ## list all lineages
+        print print_time(), "Selecting by continuous lineages..."
+        #lineages = get_lineages_mother_cells(data)
+        lineages = get_lineages_all_cells(data)
+        bname = "{}_lineages.pkl".format(dataname)
+        fileout = os.path.join(ddir,bname)
+        with open(fileout,'w') as fout:
+            pkl.dump(lineages, fout)
+        print "{:<20s}{:<s}".format("fileout",fileout)
+
+        ## keep only long enough lineages
+        try:
+            lineages = select_lineages(lineages, **params['lineages']['args'])
+            bname = "{}_lineages_selection_min{:d}.pkl".format(dataname, params['lineages']['args']['min_gen'])
+            fileout = os.path.join(ddir,bname)
+            with open(fileout,'w') as fout:
+                pkl.dump(lineages, fout)
+            print "{:<20s}{:<s}".format("fileout",fileout)
+        except KeyError:
+            pass
+
+        try:
+            if bool(params['lineages']['keep_continuous_only']):
+                selection = []
+                for lin in lineages:
+                    selection += lin
+                selection = np.unique(selection)
+                data_new = {key: data[key] for key in selection}
+                data = data_new
+                ncells = len(data)
+                print "ncells = {:d}".format(ncells)
+                suffix += ["continuouslineages"]
+        except KeyError, e :
+            print e
+
+        for key in data:
+            cell = data[key]
+
+        # cutoffs filtering
+        if ('cutoffs' in params):
+            print print_time(), "Applying cutoffs filtering..."
+            data = filter_cells(data, params['cutoffs'])
+            suffix += ["cutoffs"]
+            ncells = len(data)
+            print "ncells = {:d}".format(ncells)
 
 ################################################
 # write
@@ -527,7 +568,9 @@ if __name__ == "__main__":
     if (ncells == 0 ):
         sys.exit("Filtered data is empty!")
 
-    fileout = os.path.join(ddir, dataname + '_filtered' + '.pkl')
+    filename = dataname + "_" + "_".join(suffix)
+    fileout = os.path.join(ddir, filename + '.pkl')
+
     with open(fileout,'w') as fout:
         pkl.dump(data, fout)
     print "{:<20s}{:<s}".format('fileout', fileout)
@@ -538,7 +581,7 @@ if __name__ == "__main__":
         yaml.dump(allparams,stream=fout,default_flow_style=False, tags=None)
     print "{:<20s}{:<s}".format('fileout', dest)
 
-    if (namespace.textify):
+    if (not namespace.notextify):
         # write text versions
         cellref = data.values()[0]
 
@@ -567,9 +610,11 @@ if __name__ == "__main__":
 
         header = ",".join(scalar_attributes)
         data_array = [[getattr(cell,s) for s in scalar_attributes] for cell in data.values()]
-        data_array = np.array(data_array)
-        fileout = os.path.join(ddir, dataname + '_filtered' + '.txt')
-        np.savetxt(X=data_array, fname=fileout, header=header, fmt=scalar_attributes_fmt)
+        fileout = os.path.join(ddir, filename + '.txt')
+        with open(fileout,'w') as fout:
+            fout.write('#'+header+'\n')
+            for i in range(len(data_array)):
+                fout.write("".join(scalar_attributes_fmt) %tuple(data_array[i]) + '\n')
         print "{:<20s}{:<s}".format('fileout', fileout)
 
 

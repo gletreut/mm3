@@ -1827,7 +1827,7 @@ if __name__ == "__main__":
     print "{:<20s}{:<s}".format('data dir', tdir)
     cellname = os.path.basename(namespace.pklfile.name)
     cellnamespl = os.path.splitext(cellname)[0]
-    plotdir = os.path.join(tdir,'plots')
+    plotdir = os.path.join(tdir,'plots',cellnamespl)
     if not os.path.isdir(plotdir):
         os.makedirs(plotdir)
 
@@ -1838,7 +1838,7 @@ if __name__ == "__main__":
         if not os.path.isdir(popdir):
             os.makedirs(popdir)
         try:
-            fileout = os.path.join(popdir,'{}_distributions.pdf'.format(cellnamespl))
+            fileout = os.path.join(popdir,'distributions.pdf')
             plot_distributions(cells, attrdict=params['distributions']['attributes'], fileout=fileout)
         except:
             print "Error with distributions plotting."
@@ -1849,7 +1849,7 @@ if __name__ == "__main__":
         if not os.path.isdir(popdir):
             os.makedirs(popdir)
         try:
-            fileout = os.path.join(popdir,'{}_cross_correlations.pdf'.format(cellnamespl))
+            fileout = os.path.join(popdir,'cross_correlations.pdf')
             plot_cross_correlations(cells, attrdict=params['cross correlations']['attributes'], fileout=fileout, **params['cross correlations']['args'])
         except:
             print "Error with cross-correlations plotting."
@@ -1860,7 +1860,7 @@ if __name__ == "__main__":
         if not os.path.isdir(popdir):
             os.makedirs(popdir)
         try:
-            fileout = os.path.join(popdir,'{}_autocorrelations.pdf'.format(cellnamespl))
+            fileout = os.path.join(popdir,'autocorrelations.pdf')
             plot_autocorrelations(cells, attrdict=params['autocorrelations']['attributes'], fileout=fileout, **params['autocorrelations']['args'])
         except:
             print "Error with autocorrelations plotting."
@@ -1896,7 +1896,7 @@ if __name__ == "__main__":
                 os.makedirs(lindir)
             if 'fovs' in params['plot_lineages_byfov']:
                 fovs = params['plot_lineages_byfov']['fovs']
-                fileoutspl = os.path.join(lindir,'{}_lineages'.format(cellnamespl))
+                fileoutspl = os.path.join(lindir,'lineages')
                 plot_lineages_byfov(lineages,cells,fileoutspl, fovs=fovs, **params['plot_lineages_byfov']['args'])
 
 
@@ -1905,7 +1905,7 @@ if __name__ == "__main__":
             lindir = os.path.join(plotdir,'lineages_with_growth_rate')
             if not os.path.isdir(lindir):
                 os.makedirs(lindir)
-            fileoutspl = os.path.join(lindir,'{}_lineages'.format(cellnamespl))
+            fileoutspl = os.path.join(lindir,'lineages')
             if 'fovs' in params['plot_lineages_with_growth_rate']:
                 fovs = params['plot_lineages_with_growth_rate']['fovs']
                 selection = []
@@ -1924,7 +1924,7 @@ if __name__ == "__main__":
             lindir = os.path.join(plotdir,'lineages_variables')
             if not os.path.isdir(lindir):
                 os.makedirs(lindir)
-            fileoutspl = os.path.join(lindir,'{}_lineages'.format(cellnamespl))
+            fileoutspl = os.path.join(lindir,'lineages')
             if 'fovs' in params['plot_lineages_variables']:
                 fovs = params['plot_lineages_variables']['fovs']
                 selection = []
@@ -1943,7 +1943,7 @@ if __name__ == "__main__":
             lindir = os.path.join(plotdir,'lineages_correlations')
             if not os.path.isdir(lindir):
                 os.makedirs(lindir)
-            fileoutspl = os.path.join(lindir,'{}_lineages'.format(cellnamespl))
+            fileoutspl = os.path.join(lindir,'lineages')
             if 'fovs' in params['plot_lineages_correlations']:
                 fovs = params['plot_lineages_correlations']['fovs']
                 selection = []
@@ -1962,7 +1962,7 @@ if __name__ == "__main__":
             lindir = os.path.join(plotdir,'lineages_acf')
             if not os.path.isdir(lindir):
                 os.makedirs(lindir)
-            fileoutspl = os.path.join(lindir,'{}_lineages_acf'.format(cellnamespl))
+            fileoutspl = os.path.join(lindir,'lineages_acf')
 
             if 'fovs' in params['plot_lineages_acf']:
                 fovs = params['plot_lineages_acf']['fovs']
