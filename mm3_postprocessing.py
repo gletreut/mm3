@@ -9,6 +9,7 @@ import scipy.io as spio
 from scipy.stats import iqr
 
 import mm3_helpers
+from mm3_helpers import Cell
 
 # yaml formats
 npfloat_representer = lambda dumper,value: dumper.represent_float(float(value))
@@ -301,6 +302,7 @@ if __name__ == "__main__":
     parser.add_argument('--nocomputations',  action='store_true', help='Disable the computation of extra-quantities.')
     parser.add_argument('--notextify',  action='store_true', help='Export text versions of cell attributes and lineage information.')
     parser.add_argument('-c', '--cellcycledir',  metavar='picked', type=str, help='Directory containing all Matlab files (lineages) with cell cycle information.')
+    parser.add_argument('--cellcyclefile',  type=str, help='Matlab file a cell dictionary.')
     parser.add_argument('--complete_cc',  action='store_true', help='If passed, remove cells not mapped to cell cycle through a initiation --> division correspondence.')
     namespace = parser.parse_args(sys.argv[1:])
     paramfile = namespace.paramfile.name
@@ -341,14 +343,15 @@ if __name__ == "__main__":
 ################################################
 # cell cycle
 ################################################
-    if namespace.cellcycledir != None:
+    # initialize new attributes
+    #'initiation_mass', 'initiation_mass_n', 'termination_time', 'initiation_time', 'initiation_time_n'
+    #required_attr = {'initiation_mass_n':'unit_size', 'termination_time':'termination_time', 'initiation_time':'initiation_time'}
+    required_attr = {'initiation_mass':'unit_size', 'termination_time':'termination_time', 'initiation_time':'initiation_time', 'noc': 'n_oc' }
+    if not (namespace.cellcycledir is None):
         print print_time(), 'Loading cell cycle information'
         if not os.path.isdir(namespace.cellcycledir):
             sys.exit('Directory doesn\'t exist: {}'.format(namespace.cellcycledir))
 
-        # initialize new attributes
-        #'initiation_mass', 'initiation_mass_n', 'termination_time', 'initiation_time', 'initiation_time_n'
-        required_attr = {'initiation_mass_n':'unit_size', 'termination_time':'termination_time', 'initiation_time':'initiation_time'}
         for key,cell in data.items():
             for attrcc,attr in required_attr.items():
                 setattr(cell,attr,None)
@@ -378,6 +381,35 @@ if __name__ == "__main__":
             print "ncells = {:d}".format(ncells)
             suffix.append("completecc")
 
+    elif not (namespace.cellcyclefile is None):
+        ccdata = loadmat(namespace.cellcyclefile)['complete_cells_cell_cycle']
+        for key in ccdata.keys():
+            if not (key in data):
+                print "Skipping cell from cell cycle data: {}".format(key)
+                continue
+
+            cell_cc = ccdata[key]
+            cell = data[key]
+
+            for attrcc,attr in required_attr.items():
+                try:
+                    setattr(cell,attr,cell_cc[attrcc])
+                except KeyError:
+                    setattr(cell,attr,None)
+
+        # if argument passed, remove cells without a cell cycle mapped.
+        if namespace.complete_cc:
+
+            cellccids = np.array(ccdata.keys(),dtype=np.str)
+            cellids = list(set(np.array(data.keys(), dtype=np.str)).intersection(set(cellccids)))
+            cellids = np.array(cellids, dtype=np.str)
+            has_cc = lambda cell: not ((cell.termination_time is None) or (cell.initiation_time is None))
+            data = {key: data[key] for key in cellids if has_cc(data[key])}
+
+            ncells = len(data)
+            print "ncells = {:d}".format(ncells)
+            suffix.append("completecc")
+
 ################################################
 # compute extra-quantities
 ################################################
@@ -390,6 +422,7 @@ if __name__ == "__main__":
             cell = data[key]
             try:
                 cell.B = cell.initiation_time - cell.birth_time
+                if (cell.B < 0.): cell.B = None # B period does not make sense if overlapping cell cycles
                 cell.C = cell.termination_time - cell.initiation_time
                 cell.D = cell.division_time - cell.termination_time
                 cell.taucyc = cell.C + cell.D
@@ -481,7 +514,7 @@ if __name__ == "__main__":
         data_new = {}
         for key in data:
             cell = data[key]
-            if (cell.parent != None) and (cell.daughters != None):
+            if (not (cell.parent is None)) and (not (cell.daughters is None)):
                 data_new[key] = cell
         data = data_new
 
@@ -603,7 +636,7 @@ if __name__ == "__main__":
             elif (type(sa) == float):
                 scalar_attributes_fmt.append('%-18.6g')
             elif (type(sa) == str):
-                scalar_attributes_fmt.append('%s')
+                scalar_attributes_fmt.append('%-30s')
             else:
                 print type(sa)
                 sys.exit("Problem in text formatting with attribute: {}".format(sa))
