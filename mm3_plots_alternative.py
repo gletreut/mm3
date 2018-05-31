@@ -1428,7 +1428,7 @@ def plot_distributions(cells, attrdict, fileout, color='darkblue', nbins_max=8):
                 x = np.float_(getattr(cell,attr))
                 if np.isfinite(x):
                     X.append(x)
-            except ValueError:
+            except (ValueError,AttributeError):
                 continue
         X = np.array(X)
 
@@ -1508,7 +1508,7 @@ def plot_cross_correlations(cells, attrdict, fileout, color1='darkblue', color2=
                     if np.isfinite(x) and np.isfinite(y):
                         X.append(x)
                         Y.append(y)
-                except ValueError:
+                except (ValueError,AttributeError):
                     continue
             X = np.array(X)
             #print len(X)
@@ -1642,6 +1642,9 @@ def plot_autocorrelations(cells, attrdict, fileout, color1='darkblue', color2='b
                 continue
             except KeyError:
                 # error in cellm=cells[keym] statement
+                continue
+            except AttributeError:
+                # error in getattr
                 continue
         X = np.array(X)
         Y = np.array(Y)
@@ -1837,8 +1840,8 @@ if __name__ == "__main__":
         popdir = os.path.join(plotdir,'population')
         if not os.path.isdir(popdir):
             os.makedirs(popdir)
+        fileout = os.path.join(popdir,'distributions.pdf')
         try:
-            fileout = os.path.join(popdir,'distributions.pdf')
             plot_distributions(cells, attrdict=params['distributions']['attributes'], fileout=fileout)
         except:
             print "Error with distributions plotting."

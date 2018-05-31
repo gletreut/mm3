@@ -8,7 +8,7 @@ import shutil
 import scipy.io as spio
 from scipy.stats import iqr
 
-import mm3_helpers
+import mm3_helpers as mm3
 
 # yaml formats
 npfloat_representer = lambda dumper,value: dumper.represent_float(float(value))
@@ -47,3 +47,4 @@ if __name__ == "__main__":
             print "{:s}".format(attr)
             print getattr(cell,attr)
             print ""
+
