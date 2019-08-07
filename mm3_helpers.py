@@ -26,6 +26,7 @@ from scipy.optimize import curve_fit # fitting ring profile
 from scipy.optimize import leastsq # fitting 2d gaussian
 from scipy import ndimage as ndi # labeling and distance transform
 from skimage import segmentation # used in make_masks and segmentation
+from skimage.transform import rotate
 from skimage.feature import match_template # used to align images
 from skimage.feature import blob_log # used for foci finding
 from skimage.filters import threshold_otsu # segmentation
@@ -72,7 +73,7 @@ with warnings.catch_warnings():
 
 # print a warning
 def warning(*objs):
-    print(time.strftime("%H:%M:%S Warning:", time.localtime()), *objs, file=sys.stderr)
+    print(time.strftime("%H:%M:%S WARNING:", time.localtime()), *objs, file=sys.stderr)
 
 # print information
 def information(*objs):
@@ -896,8 +897,12 @@ def fix_orientation(image_data):
 
     # setting image_orientation to 'auto' will use autodetection
     if image_orientation == "auto":
-        # Pick the plane to analyze with the highest mean px value (should be phase)
-        ph_channel = np.argmax([np.mean(image_data[ci]) for ci in range(image_data.shape[0])])
+         # use 'phase_plane' to find the phase plane in image_data, assuming c1, c2, c3... naming scheme here.
+        try:
+            ph_channel = int(re.search('[0-9]', params['phase_plane']).group(0)) - 1
+        except:
+            # Pick the plane to analyze with the highest mean px value (should be phase)
+            ph_channel = np.argmax([np.mean(image_data[ci]) for ci in range(image_data.shape[0])])
 
         # flip based on the index of the higest average row value
         # this should be closer to the opening
@@ -1370,7 +1375,7 @@ def subtract_fluor(image_pair):
                 [[np.int(.5*pad_row_length), pad_row_length-np.int(.5*pad_row_length)],
                 [np.int(.5*pad_column_length),  pad_column_length-np.int(.5*pad_column_length)],
                 [0,0]], 'edge')
-            print('size adjusted 1')
+            # mm3.information('size adjusted 1')
         empty_size = np.shape(empty_channel)[:2]
         if crop_size[0] < empty_size[0] or crop_size[1] < empty_size[1]:
             empty_channel = empty_channel[:crop_size[0], :crop_size[1],]
@@ -1582,7 +1587,7 @@ def make_lineages_fov(fov_id, specs,nproc=2):
     pool.close() # tells the process nothing more will be added.
     pool.join() # blocks script until everything has been processed and workers exit
 
-    # # This is the non-parallelized version (useful for debug)
+    # This is the non-parallelized version (useful for debug)
     # for fov_and_peak_ids in fov_and_peak_ids_list:
     #     lineages = make_lineage_chnl_stack(fov_and_peak_ids)
 
@@ -1902,7 +1907,6 @@ class Cell():
 
         # generation time. Use more accurate times but round them to integer minutes
         self.tau = np.around((self.abs_times[-1] - self.abs_times[0]) / 60.0)
-        old_tau = (self.division_time - self.birth_time) * params['seconds_per_time_index'] / 60.0
 
         # include the data points from the daughters
         self.lengths_w_div = [l * params['pxl2um'] for l in self.lengths] + [self.sd]
@@ -2016,7 +2020,7 @@ def feretdiameter(region):
 
     #####################
     # calculate cell width
-    # draw 2 parallel lines along the short axis line spaced by 0.8*quarter of length = 0.4, to avoid constriction in midcell
+    # draw 2 parallel lines along the short axis line spaced by 0.8*quarter of length = 0.4, to avoid  in midcell
 
     # limit to points in each half
     W_coords = []
@@ -2209,7 +2213,7 @@ def find_mother_cells(Cells):
 
 ### functions for additional cell centric analysis
 
-def find_cell_intensities(fov_id, peak_id, Cells, midline=True):
+def find_cell_intensities(fov_id, peak_id, Cells, midline=False):
     '''
     Finds fluorescenct information for cells. All the cells in Cells
     should be from one fov/peak. See the function
@@ -2217,7 +2221,7 @@ def find_cell_intensities(fov_id, peak_id, Cells, midline=True):
     '''
 
     # Load fluorescent images and segmented images for this channel
-    fl_stack = load_stack(fov_id, peak_id, color='c2')
+    fl_stack = load_stack(fov_id, peak_id, color='sub_c2')
     seg_stack = load_stack(fov_id, peak_id, color='seg')
 
     # determine absolute time index
@@ -2283,7 +2287,7 @@ def foci_analysis(fov_id, peak_id, Cells):
     # Import segmented and fluorescenct images
     image_data_seg = load_stack(fov_id, peak_id, color='seg')
     image_data_FL = load_stack(fov_id, peak_id,
-                               color='sub_{}'.format(params['foci_plane']))
+                               color='sub_{}'.format(params['foci']['foci_plane']))
 
     # Load time table to determine first image index.
     time_table_path = os.path.join(params['ana_dir'], 'time_table.pkl')
@@ -2347,6 +2351,36 @@ def foci_analysis(fov_id, peak_id, Cells):
 
     return
 
+# foci pool (for parallel analysis)
+def foci_analysis_pool(fov_id, peak_id, Cells):
+    '''Find foci in cells using a fluorescent image channel.
+    This function works on a single peak and all the cells therein.'''
+
+    # make directory for foci debug
+    # foci_dir = os.path.join(params['ana_dir'], 'overlay/')
+    # if not os.path.exists(foci_dir):
+    #     os.makedirs(foci_dir)
+
+    # Import segmented and fluorescenct images
+    image_data_seg = load_stack(fov_id, peak_id, color='seg')
+    image_data_FL = load_stack(fov_id, peak_id,
+                               color='sub_{}'.format(params['foci']['foci_plane']))
+
+    # Load time table to determine first image index.
+    time_table_path = os.path.join(params['ana_dir'], 'time_table.pkl')
+    with open(time_table_path, 'r') as fin:
+        time_table = pickle.load(fin)
+    times_all = np.array(np.sort(time_table[fov_id].keys()), np.int_)
+    t0 = times_all[0] # first time index
+    tN = times_all[-1] # last time index
+
+    # call foci_cell for each cell object
+    pool = Pool(processes=params['num_analyzers'])
+    [pool.apply_async(foci_cell(cell_id, cell, t0, image_data_seg, image_data_FL)) for cell_id, cell in Cells.items()]
+    pool.close()
+    pool.join()
+
+# parralel function for each cell
 def foci_cell(cell_id, cell, t0, image_data_seg, image_data_FL):
     '''find foci in a cell, single instance to be called by the foci_analysis_pool for parallel processing.
     '''
@@ -2456,10 +2490,11 @@ def foci_lap(img, img_foci, cell, t):
     foci_h = [] # foci total amount (from raw image)
 
     # define parameters for foci finding
-    minsig = params['foci_log_minsig']
-    maxsig = params['foci_log_maxsig']
-    thresh = params['foci_log_thresh']
-    peak_med_ratio = params['foci_log_peak_med_ratio']
+    minsig = params['foci']['foci_log_minsig']
+    maxsig = params['foci']['foci_log_maxsig']
+    thresh = params['foci']['foci_log_thresh']
+    peak_med_ratio = params['foci']['foci_log_peak_med_ratio']
+    debug_foci = params['foci']['debug_foci']
 
     # test
     #print ("minsig={:d}  maxsig={:d}  thres={:.4g}  peak_med_ratio={:.2g}".format(minsig,maxsig,thresh,peak_med_ratio))
@@ -2470,6 +2505,8 @@ def foci_lap(img, img_foci, cell, t):
     img_foci_masked[img != region] = np.nan
     cell_fl_median = np.nanmedian(img_foci_masked)
     cell_fl_mean = np.nanmean(img_foci_masked)
+
+    img_foci_masked[img != region] = 0
 
     # subtract this value from the cell
     if False:
@@ -2486,7 +2523,7 @@ def foci_lap(img, img_foci, cell, t):
     # find blobs using difference of gaussian
     over_lap = .95 # if two blobs overlap by more than this fraction, smaller blob is cut
     numsig = (maxsig - minsig + 1) # number of division to consider between min ang max sig
-    blobs = blob_log(img_foci, min_sigma=minsig, max_sigma=maxsig,
+    blobs = blob_log(img_foci_masked, min_sigma=minsig, max_sigma=maxsig,
                      overlap=over_lap, num_sigma=numsig, threshold=thresh)
 
     # these will hold information about foci position temporarily
@@ -2519,10 +2556,10 @@ def foci_lap(img, img_foci, cell, t):
 
             # print('peak', peak_fit)
             if x_fit <= 0 or x_fit >= radius*2 or y_fit <= 0 or y_fit >= radius*2:
-                if params['debug_foci']: print('Throw out foci (gaus fit not in gfit_area)')
+                if debug_foci: print('Throw out foci (gaus fit not in gfit_area)')
                 continue
             elif peak_fit/cell_fl_median < peak_med_ratio:
-                if params['debug_foci']: print('Peak does not pass height test.')
+                if debug_foci: print('Peak does not pass height test.')
                 continue
             else:
                 # find x and y position relative to the whole image (convert from small box)
@@ -2543,11 +2580,11 @@ def foci_lap(img, img_foci, cell, t):
                 disp_w = np.append(disp_w, disp_x)
                 foci_h = np.append(foci_h, np.sum(gfit_area))
         else:
-            if params['debug_foci']:
+            if debug_foci:
                 print ('Blob not in bounding box.')
 
     # draw foci on image for quality control
-    if params['debug_foci']:
+    if debug_foci:
         outputdir = os.path.join(params['ana_dir'], 'debug_foci')
         if not os.path.isdir(outputdir):
             os.makedirs(outputdir)
@@ -2895,12 +2932,12 @@ def ring_analysis(fov_id, peak_id, Cells, ring_plane='c2'):
             try:
                 # Fit gaussian
                 p_guess = [peak_height_sub, peak_index, peak_width_guess]
-                popt, pcov = curve_fit(gaussian1d, profile_indicies, profile_sub,
-                                       p0=p_guess)
+                popt, pcov = curve_fit(gaussian1d, profile_indicies,
+                                       profile_sub, p0=p_guess)
 
                 peak_width = popt[2]
             except:
-                information('Ring gaussian fit failed. {} {} {}'.format(fov_id, peak_id, t))
+                # information('Ring gaussian fit failed. {} {} {}'.format(fov_id, peak_id, t))
                 peak_width = np.float('NaN')
 
             # Add data to cells
@@ -2912,6 +2949,7 @@ def ring_analysis(fov_id, peak_id, Cells, ring_plane='c2'):
 
     return
 
+# Calculate Y projection intensity of a fluorecent channel per cell
 def profile_analysis(fov_id, peak_id, Cells, profile_plane='c2'):
     '''Calculate profile of plane along cell and add information to Cell object. Sums the fluorescent channel along the long axis of the cell.
 
@@ -2946,7 +2984,7 @@ def profile_analysis(fov_id, peak_id, Cells, profile_plane='c2'):
     for Cell in Cells.values():
 
         # initialize ring data arrays for cell
-        Cell.fl_profiles = []
+        fl_profiles = []
 
         # loop through each time point for this cell
         for n, t in enumerate(Cell.times):
@@ -2978,6 +3016,226 @@ def profile_analysis(fov_id, peak_id, Cells, profile_plane='c2'):
             profile = profile_line(image_masked, p1, p2, linewidth=width,
                                    order=1, mode='constant', cval=0)
 
-            Cell.fl_profiles.append(profile) # append whole profile
+            fl_profiles.append(profile)
+
+        # append whole profile, using plane name
+        setattr(Cell, 'fl_profiles_'+profile_plane, fl_profiles)
 
     return
+
+# Calculate X projection at midcell and quarter position
+def x_profile_analysis(fov_id, peak_id, Cells, profile_plane='sub_c2'):
+    '''Calculate profile of plane along cell and add information to Cell object. Sums the fluorescent channel along the long axis of the cell.
+
+    Parameters
+    ----------
+    fov_id : int
+        FOV number of the lineage to analyze.
+    peak_id : int
+        Peak number of the lineage to analyze.
+    Cells : dict of Cell objects (from a Lineages dictionary)
+        Cells should be prefiltered to match fov_id and peak_id.
+    profile_plane : str
+        The suffix of the channel to analyze. 'c1', 'c2', 'sub_c2', etc.
+
+    '''
+
+    # width to sum over in pixels
+    line_width = 6
+
+    # Load data
+    fl_stack = load_stack(fov_id, peak_id, color=profile_plane)
+    seg_stack = load_stack(fov_id, peak_id, color='seg')
+
+    # Load time table to determine first image index.
+    time_table_path = os.path.join(params['ana_dir'], 'time_table.pkl')
+    with open(time_table_path, 'r') as fin:
+        time_table = pickle.load(fin)
+    times_all = np.array(np.sort(time_table[fov_id].keys()), np.int_)
+    t0 = times_all[0] # first time index
+
+    # Loop through cells
+    for Cell in Cells.values():
+
+        # print(Cell.id)
+
+        # initialize data arrays for cell
+        midcell_fl_profiles = []
+        midcell_pts = []
+        quarter_fl_profiles = []
+        quarter_pts = []
+
+        # loop through each time point for this cell
+        for n, t in enumerate(Cell.times):
+            # Make mask of fluorescent channel using segmented image
+            image_masked = np.copy(fl_stack[t-t0])
+            # image_masked[seg_stack[t-t0] != Cell.labels[n]] = 0
+
+            # Sum along short axis, use the profile_line function from skimage
+            # Use orientation of cell as calculated from the ellipsoid fit,
+            # the known length of the cell from the feret diameter,
+            # and a width that is greater than the cell width.
+
+            # find end points for summing
+            centroid = Cell.centroids[n]
+            orientation = Cell.orientations[n]
+            length = Cell.lengths[n]
+            width = Cell.widths[n]
+
+            # midcell
+            # give 2 pixel buffer to each end to capture area outside cell.
+            md_p1 = (centroid[0] - np.cos(orientation) * (width+8)/2,
+                     centroid[1] - np.sin(orientation) * (width+8)/2)
+            md_p2 = (centroid[0] + np.cos(orientation) * (width+8)/2,
+                     centroid[1] + np.sin(orientation) * (width+8)/2)
+
+            # ensure lower x point is always first
+            if md_p1[1] > md_p2[1]:
+                md_p1, md_p2 = md_p2, md_p1 # python is cool
+            midcell_pts.append((md_p1, md_p2))
+
+            # print(t, centroid, orientation, md_p1, md_p2)
+            md_profile = profile_line(image_masked, md_p1, md_p2,
+                                      linewidth=line_width,
+                                      order=1, mode='constant', cval=0)
+            midcell_fl_profiles.append(md_profile)
+
+            # quarter position, want to measure at mother end
+            if orientation > 0:
+                yq = centroid[0] - np.sin(orientation) * 0.5 * (length * 0.5)
+                xq = centroid[1] + np.cos(orientation) * 0.5 * (length * 0.5)
+            else:
+                yq = centroid[0] + np.sin(orientation) * 0.5 * (length * 0.5)
+                xq = centroid[1] - np.cos(orientation) * 0.5 * (length * 0.5)
+
+            q_p1 = (yq - np.cos(orientation) * (width+8)/2,
+                    xq - np.sin(orientation) * (width+8)/2)
+            q_p2 = (yq + np.cos(orientation) * (width+8)/2,
+                    xq + np.sin(orientation) * (width+8)/2)
+
+            if q_p1[1] > q_p2[1]:
+                q_p1, q_p2 = q_p2, q_p1
+            quarter_pts.append((q_p1, q_p2))
+
+            q_profile = profile_line(image_masked, q_p1, q_p2,
+                                     linewidth=line_width,
+                                     order=1, mode='constant', cval=0)
+            quarter_fl_profiles.append(q_profile)
+
+        # append whole profile, using plane name
+        setattr(Cell, 'fl_md_profiles_'+profile_plane, midcell_fl_profiles)
+        setattr(Cell, 'midcell_pts', midcell_pts)
+        setattr(Cell, 'fl_quar_profiles_'+profile_plane, quarter_fl_profiles)
+        setattr(Cell, 'quarter_pts', quarter_pts)
+
+    return
+
+# Calculate X projection at midcell and quarter position
+def constriction_analysis(fov_id, peak_id, Cells, plane='sub_c1'):
+    '''Calculate profile of plane along cell and add information to Cell object. Sums the fluorescent channel along the long axis of the cell.
+
+    Parameters
+    ----------
+    fov_id : int
+        FOV number of the lineage to analyze.
+    peak_id : int
+        Peak number of the lineage to analyze.
+    Cells : dict of Cell objects (from a Lineages dictionary)
+        Cells should be prefiltered to match fov_id and peak_id.
+    plane : str
+        The suffix of the channel to analyze. 'c1', 'c2', 'sub_c2', etc.
+
+    '''
+
+    # Load data
+    sub_stack = load_stack(fov_id, peak_id, color=plane)
+    seg_stack = load_stack(fov_id, peak_id, color='seg')
+
+    # Load time table to determine first image index.
+    time_table_path = os.path.join(params['ana_dir'], 'time_table.pkl')
+    with open(time_table_path, 'r') as fin:
+        time_table = pickle.load(fin)
+    times_all = np.array(np.sort(time_table[fov_id].keys()), np.int_)
+    t0 = times_all[0] # first time index
+
+    # Loop through cells
+    for Cell in Cells.values():
+
+        # print(Cell.id)
+
+        # initialize data arrays for cell
+        midcell_imgs = [] # Just a small image of the midcell
+        midcell_sums = [] # holds sum of pixel values in midcell area
+        midcell_vars = [] # variances
+
+        coeffs_2nd = [] # coeffiients for fitting
+
+        # loop through each time point for this cell
+        for n, t in enumerate(Cell.times):
+            # Make mask of subtracted image
+            image_masked = np.copy(sub_stack[t-t0])
+            image_masked[seg_stack[t-t0] != Cell.labels[n]] = 0
+
+            # make a box aroud the midcell from which to calculate stats
+            centroid = Cell.centroids[n]
+            orientation = Cell.orientations[n]
+            length = Cell.lengths[n]
+            slice_l = np.around(length/4).astype('int')
+            width = Cell.widths[n]
+            slice_w = np.around(width/2).astype('int') + 3
+            slice_l = slice_w
+
+            # rotate box and then slice out area around centroid
+            if orientation > 0:
+                rot_angle = 90 - orientation * (180 / np.pi)
+            else:
+                rot_angle = -90 - orientation * (180 / np.pi)
+
+            rotated = rotate(image_masked, rot_angle, resize=False,
+                             center=centroid, mode='constant', cval=0)
+            centroid = [int(coord) for coord in centroid]
+            cropped_md = rotated[centroid[0]-slice_l:centroid[0]+slice_l,
+                                 centroid[1]-slice_w:centroid[1]+slice_w]
+
+            # sum across with widths
+            md_widths = np.array([np.around(sum(row),5) for row in cropped_md])
+
+            # fit widths
+            x_pixels = np.arange(1, len(md_widths)+1) - (len(md_widths)+1)/2
+            p_guess = (1, 1, 1)
+            popt, pcov = curve_fit(poly2o, x_pixels, md_widths, p0=p_guess)
+            a, b, c = popt
+            # save coefficients
+            coeffs_2nd.append(a)
+
+            # go backwards through coeeficients and find at which index the coeff becomes negative.
+            constriction_index = None
+            for i, coeff in enumerate(reversed(coeffs_2nd), start=0):
+                if coeff < 0:
+                    constriction_index = i
+                    break
+
+            # fix index
+            if constriction_index == None:
+                constriction_index = len(coeffs_2nd) - 1 # make it last point if it was not found
+            else:
+                constriction_index = len(coeffs_2nd) - constriction_index - 1
+
+            # midcell_imgs.append(cropped_md)
+            # midcell_sums.append(np.sum(cropped_md))
+            # midcell_vars.append(np.var(cropped_md))
+
+        # append whole profile, using plane name
+        # setattr(Cell, 'md_image_'+plane, midcell_imgs)
+        # setattr(Cell, 'md_sums', midcell_sums)
+        # setattr(Cell, 'md_vars', midcell_vars)
+
+        setattr(Cell, 'constriction_time', Cell.times[constriction_index])
+
+    return
+
+def poly2o(x, a, b, c):
+    '''Second order polynomial of the form
+       y = a*x^2 + bx + c'''
+
+    return a*x**2 + b*x + c
