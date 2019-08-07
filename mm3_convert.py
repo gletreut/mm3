@@ -118,12 +118,19 @@ if __name__ == "__main__":
     matfilepath = namespace.matfile
     if not os.path.isfile(matfilepath):
         sys.exit('File {} does not exist'.format(matfilepath))
-    matdata = loadmat(matfilepath)['complete_cells_cell_cycle']
+    #matdata = loadmat(matfilepath)['complete_cells_cell_cycle']
+    matdata = loadmat(matfilepath)
 
     cells = {}
-    for key in matdata:
+    for key in matdata.keys():
         cell=Cell()
-        for attr in matdata[key].keys():
+        print key
+        try:
+            attributes = matdata[key].keys()
+        except AttributeError:
+            # happened when the key is "__header__"
+            continue
+        for attr in attributes:
             value = matdata[key][attr]
             if value == []:
                 value = None

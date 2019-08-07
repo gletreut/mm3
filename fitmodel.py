@@ -11,7 +11,7 @@ class FitRes:
         o s: standard deviations for the y values.
         o funcfit: fitting function.
     """
-    def __init__(self, x, y,funcfit_f, funcfit_df, yerr=None):
+    def __init__(self, x, y, funcfit_f, funcfit_df, yerr=None):
         self.x = np.array(x)
         self.y = np.array(y)
         self.funcfit_f = funcfit_f
@@ -32,3 +32,15 @@ class FitRes:
         dfx = np.array([np.array(self.funcfit_df(par,xi))/si for (xi,si) in zip(self.x,self.yerr)])
         return dfx
 
+    def fit(self,p_init, least_squares_args={'loss':'cauchy'}):
+        # perform the least_square minimization
+        try:
+            if (self.funcfit_df is None):
+                res = least_squares(x0=p_init, fun=self.residual_f, **least_squares_args)
+            else:
+                res = least_squares(x0=p_init, fun=self.residual_f, jac=self.residual_df, **least_squares_args)
+            par=res.x
+        except ValueError as e:
+            print e
+            sys.exit(1)
+        return par
