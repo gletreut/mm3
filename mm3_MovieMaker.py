@@ -6,7 +6,7 @@ import sys
 import os
 import time
 import inspect
-import getopt
+import argparse
 import yaml
 import traceback
 import glob
@@ -16,7 +16,6 @@ import numpy as np
 from freetype import *
 import warnings
 
-from mm3_helpers import get_time
 # user modules
 # realpath() will make your script run, even if you symlink it
 cmd_folder = os.path.realpath(os.path.abspath(
@@ -36,13 +35,10 @@ with warnings.catch_warnings():
     warnings.simplefilter("ignore")
     import tifffile as tiff
 
+# this is the mm3 module with all the useful functions and classes
+import mm3_helpers as mm3
+
 ### functions ##################################################################
-def warning(*objs):
-    print(time.strftime("%H:%M:%S Error:", time.localtime()), *objs, file=sys.stderr)
-
-def information(*objs):
-    print(time.strftime("%H:%M:%S", time.localtime()), *objs, file=sys.stdout)
-
 def make_label(text, face, size=12, angle=0):
     '''Uses freetype to make a time label.
 
@@ -162,79 +158,65 @@ if __name__ == "__main__":
             sys.exit("You need to install some fonts and specify the correct path to the .ttf file!")
     fontface = Face(fontfile)
 
-    # set seconds_per_time_index parameter in param file
-    show_time_stamp = True
+    # set switches and parameters
+    parser = argparse.ArgumentParser(prog='python mm3_MovieMaker.py',
+                                     description='Make .mpg movies from TIFF images.')
+    parser.add_argument('-f', '--paramfile',  type=file,
+                        required=True, help='Yaml file containing parameters.')
+    parser.add_argument('-o', '--fov',  type=str,
+                        required=False, help='List of fields of view to analyze. Input "1", "1,2,3", etc. ')
+    parser.add_argument('-j', '--nproc',  type=int,
+                        required=False, help='Number of processors to use.')
+    namespace = parser.parse_args()
 
-    # label properties
-    show_label = True
-    label1_text = 'Label 1'
-    # if shift time is set to a value, label2 will be displayed in place of label1 at that timepoint
-    shift_time = None
-    label2_text = 'Label 2'
+    # Load the project parameters file
+    mm3.information('Loading experiment parameters.')
+    if namespace.paramfile.name:
+        param_file_path = namespace.paramfile.name
+    else:
+        mm3.warning('No param file specified. Using 100X template.')
+        param_file_path = 'yaml_templates/params_SJ110_100X.yaml'
+    p = mm3.init_mm3_helpers(param_file_path) # initialized the helper library
 
-    # scalebar properties
-    show_scalebar = True
-    scalebar_length_um = 10
-
-    # color management
-    show_phase = True
-    phase_plane_index = 0 # index of the phase plane
-
-    show_green = True
-    fl_green_index = 1 # index of green channel.
-    fl_green_interval = 1 # how often the fluorescent image is taken. will hold image over rather than strobe
-
-    show_red = True
-    fl_red_index = 2 # index of red fluorsecent channel.
-    fl_red_interval = 2 # how often the fluorescent image is taken. will hold image over rather than strobe
-
-    # min and max pixel intensity for scaling the data
-    auto_phase_levels = False # set to true to find automatically
-    imin = {}
-    imax = {}
-    imin['phase'], imax['phase'] = 300, 7000
-    imin['green'], imax['green'] = 100, 450
-    imin['red'], imax['red'] = 100, 450
-
-    # soft defaults, overridden by command line parameters if specified
-    param_file = ""
-    specify_fovs = []
-    start_fov = -1
-
-    # switches
-    try:
-        unixoptions='f:o:s:'
-        gnuoptions=['paramfile=','fov=','start-fov=']
-        opts, args = getopt.getopt(sys.argv[1:], unixoptions, gnuoptions)
-    except getopt.GetoptError:
-        print('No or wrong arguments detected (-f -o -s).')
-    for opt, arg in opts:
-        if opt in ['-f','--paramfile']:
-            param_file = arg
-        if opt in ['-o','--fov']:
-            arg.replace(" ", "")
-            [specify_fovs.append(int(argsplit)) for argsplit in arg.split(",")]
-        if opt in ['-s','--start-fov']:
-            try:
-                start_fov = int(arg)
-            except:
-                warning("Could not convert start parameter (%s) to an integer." % arg)
-                raise ValueError
-
-    # Load the project parameters file into a dictionary named p
-    if len(param_file) == 0:
-        raise ValueError("A parameter file must be specified (-f <filename>).")
-    information('Loading experiment parameters...')
-    with open(param_file) as pfile:
-        p = yaml.load(pfile)
+    if namespace.fov:
+        user_spec_fovs = [int(val) for val in namespace.fov.split(",")]
+    else:
+        user_spec_fovs = []
 
     # assign shorthand directory names
     TIFF_dir = os.path.join(p['experiment_directory'], p['image_directory']) # source of images
-    movie_dir = os.path.join(p['experiment_directory'], p['movie_directory'])
+    movie_dir = os.path.join(p['experiment_directory'], p['moviemaker']['movie_directory'])
 
     # set up movie folder if it does not already exist
     if not os.path.exists(movie_dir):
         os.makedirs(movie_dir)
+
+    # port over labels from yaml file
+    show_time_stamp = p['moviemaker']['show_time_stamp']
+    show_label = p['moviemaker']['show_label']
+    label1_text = p['moviemaker']['label1_text']
+    shift_time = p['moviemaker']['shift_time']
+    label2_text = p['moviemaker']['label2_text']
+    show_scalebar = p['moviemaker']['show_scalebar']
+    scalebar_length_um = p['moviemaker']['scalebar_length_um']
+    # color management
+    show_phase = p['moviemaker']['show_phase']
+    phase_plane_index = p['moviemaker']['phase_plane_index']
+    show_green = p['moviemaker']['show_green']
+    fl_green_index = p['moviemaker']['fl_green_index']
+    fl_green_interval = p['moviemaker']['fl_green_interval']
+    show_red = p['moviemaker']['show_red']
+    fl_red_index =p['moviemaker']['fl_red_index']
+    fl_red_interval = p['moviemaker']['fl_red_interval']
+
+    # min and max pixel intensity for scaling the data
+    auto_phase_levels = p['moviemaker']['auto_phase_levels']
+    imin = {'phase': p['moviemaker']['ph_min'],
+            'green': p['moviemaker']['gr_min'],
+            'red': p['moviemaker']['rd_min']}
+    imax = {'phase': p['moviemaker']['ph_max'],
+            'green': p['moviemaker']['gr_max'],
+            'red': p['moviemaker']['rd_max']}
 
     # find FOV list
     fov_list = [] # list will hold integers which correspond to FOV ids
@@ -245,14 +227,12 @@ if __name__ == "__main__":
 
     # sort and remove duplicates
     fov_list = sorted(list(set(fov_list)))
-    information('Found %d FOVs to process.' % len(fov_list))
+    mm3.information('Found %d FOVs to process.' % len(fov_list))
 
     # start the movie making
     for fov in fov_list: # for every FOV
-        # skip FOVs as specified above
-        if len(specify_fovs) > 0 and not (fov) in specify_fovs:
-            continue
-        if start_fov > -1 and fov < start_fov:
+        # skip fov if not in the group
+        if user_spec_fovs and fov not in user_spec_fovs:
             continue
 
         # grab the images for this fov
@@ -261,7 +241,7 @@ if __name__ == "__main__":
             images = glob.glob(os.path.join(TIFF_dir, '*xy%02d*.tif' % (fov))) # for filenames with 2 digit FOV
         if len(images) == 0:
             raise ValueError("No images found to export for FOV %d." % fov)
-        information("Found %d files to export." % len(images))
+        mm3.information("Found %d files to export." % len(images))
 
         if auto_phase_levels:
             # automatically scale images
@@ -272,7 +252,6 @@ if __name__ == "__main__":
         size_x, size_y = image.shape[-1], image.shape[-2]
         size_x = (size_x / 2) * 2 # fixes bug if images don't have even dimensions with ffmpeg
         size_y = (size_y / 2) * 2
-        image = image[:, :size_y, :size_x]
 
         # set command to give to ffmpeg
         command = [FFMPEG_BIN,
@@ -281,7 +260,7 @@ if __name__ == "__main__":
                 '-vcodec','rawvideo',
                 '-s', '%dx%d' % (size_x, size_y), # size of one frame
                 '-pix_fmt', 'rgb48le',
-                '-r', '%d' % p['fps'], # frames per second
+                '-r', '%d' % p['moviemaker']['fps'], # frames per second
                 '-i', '-', # The imput comes from a pipe
                 '-an', # Tells FFMPEG not to expect any audio
                 # options for the h264 codec
@@ -296,21 +275,23 @@ if __name__ == "__main__":
                 #'-bufsize', '300k',
 
                 # set the movie name
-                os.path.join(movie_dir,p['experiment_name']+'_xy%03d.mp4' % fov)]
+                os.path.join(movie_dir, p['experiment_name'] + '_xy%03d.mp4' % fov)]
 
-        information('Writing movie for FOV %d.' % fov)
+        mm3.information('Writing movie for FOV %d.' % fov)
 
         pipe = sp.Popen(command, stdin=sp.PIPE)
 
         # display a frame and send it to write
         for img in images:
             # skip images not specified by param file.
-            t = get_time(img)
-            if (t < p['image_start']) or (t > p['image_end']):
+            t = mm3.get_time(img)
+            if ((p['moviemaker']['image_start'] and t < p['moviemaker']['image_start']) or
+                (p['moviemaker']['image_end'] and t > p['moviemaker']['image_end'])):
                 continue
 
             image_data = tiff.imread(img) # get the image
-
+            image_data = image_data[:, :size_y, :size_x] # Adjust image_data dimension to have even numbers as size_y, size_x
+            
             # make phase stack
             if show_phase:
                 if len(image_data.shape) > 2:
@@ -392,11 +373,11 @@ if __name__ == "__main__":
 
             if show_time_stamp:
                 # put in time stamp
-                seconds = float(t * p['seconds_per_time_index'])
+                seconds = float((t-1) * p['moviemaker']['seconds_per_time_index'])
                 mins = seconds / 60
                 hours = mins / 60
                 timedata = "%dhrs %02dmin" % (hours, mins % 60)
-                timestamp = np.fliplr(make_label(timedata, fontface, size=48,
+                timestamp = np.fliplr(make_label(timedata, fontface, size=20,
                                                    angle=180)).astype('float64')
                 timestamp = np.pad(timestamp, ((size_y - 10 - timestamp.shape[0], 10),
                                                    (size_x - 10 - timestamp.shape[1], 10)),
@@ -409,7 +390,7 @@ if __name__ == "__main__":
                 image = 1 - ((1 - image) * (1 - timestamp))
 
             if show_label:
-                label1 = np.fliplr(make_label(label1_text, fontface, size=48,
+                label1 = np.fliplr(make_label(label1_text, fontface, size=15,
                                               angle=180)).astype('float64')
                 label1 = np.pad(label1, ((10, size_y - 10 - label1.shape[0]),
                                          (10, size_x - 10 - label1.shape[1])),
@@ -418,7 +399,7 @@ if __name__ == "__main__":
                 label1 = np.dstack((label1, label1, label1))
 
                 if shift_time:
-                    label2 = np.fliplr(make_label(label2_text, fontface, size=48,
+                    label2 = np.fliplr(make_label(label2_text, fontface, size=15,
                                                   angle=180)).astype('float64')
                     label2 = np.pad(label2, ((10, size_y - 10 - label2.shape[0]),
                                              (10, size_x - 10 - label2.shape[1])),
@@ -426,13 +407,13 @@ if __name__ == "__main__":
                     label2 /= 255.0
                     label2 = np.dstack((label2, label2, label2))
 
-            if t >= shift_time:
-                image = 1 - ((1 - image) * (1 - label2))
-            else:
-                image = 1 - ((1 - image) * (1 - label1))
+                if shift_time and t >= shift_time:
+                    image = 1 - ((1 - image) * (1 - label2))
+                else:
+                    image = 1 - ((1 - image) * (1 - label1))
 
             if show_scalebar:
-                scalebar_height = 30
+                scalebar_height = 10
                 scalebar_length = np.around(scalebar_length_um / p['pxl2um']).astype(int)
                 scalebar = np.zeros((size_y, size_x), dtype='float64')
                 scalebar[size_y - 10 - scalebar_height:size_y - 10,
@@ -440,7 +421,7 @@ if __name__ == "__main__":
 
                 # scalebar legend
                 scale_text = '{} um'.format(scalebar_length_um)
-                scale_legend = np.fliplr(make_label(scale_text, fontface, size=48,
+                scale_legend = np.fliplr(make_label(scale_text, fontface, size=20,
                                                     angle=180)).astype('float64')
                 scale_legend = np.pad(scale_legend, ((size_y - 10 - scale_legend.shape[0], 10),
                     (20 + scalebar_length, size_x - 20 - scalebar_length - scale_legend.shape[1])),
