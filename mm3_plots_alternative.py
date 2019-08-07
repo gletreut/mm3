@@ -195,6 +195,7 @@ def plot_lineages_byfov(lineages,cells,fileoutspl, color='black', lw=0.5, ax_hei
         npeaks = len(peaks)
         min_bypeak = {}
         max_bypeak = {}
+
         for lin in selection:
             cellref = cells[lin[0]]
             peak = cellref.peak
@@ -1220,6 +1221,7 @@ def get_pearsonr_piecewise_vectors(lag, vectors):
     M = np.max(Mi)
     if not (lag < M):
         return np.nan
+    print "N = {:d}".format(N)
 
     pairs=[]
     for i in range(N):
@@ -1418,8 +1420,8 @@ def plot_distributions(cells, attrdict, fileout, color='darkblue', nbins_max=8):
     gs = gridspec.GridSpec(1,ncol,wspace=0.0,hspace=0.0)
     for col in range(ncol):
         # choose attribute
-        print "col {:d}".format(col)
         attr = attributes[col]
+        print "col {:d}  attr {}".format(col,attr)
 
         # build data
         X = []
@@ -1443,6 +1445,12 @@ def plot_distributions(cells, attrdict, fileout, color='darkblue', nbins_max=8):
         mean = np.mean(X)
         std = np.std(X)
         cv = std/mean
+        xmed = np.median(X)
+        xiqr = iqr(X)
+
+        # filter outliers
+        idx = (X >= xmed - 5*xiqr) & (X <= xmed + 5*xiqr)
+        X = X[idx]
         hist,edges = histogram(X)
         left = edges[:-1]
         right = edges[1:]
@@ -1529,8 +1537,17 @@ def plot_cross_correlations(cells, attrdict, fileout, color1='darkblue', color2=
 
             xmean = np.mean(X)
             xstd = np.std(X)
+            xmed = np.median(X)
+            xiqr = iqr(X)
             ymean = np.mean(Y)
             ystd = np.std(Y)
+            ymed = np.median(Y)
+            yiqr = iqr(Y)
+
+            # filer data
+            idx = (X >= xmed - 5*xiqr) & (X <= xmed + 5*xiqr) &(Y >= ymed - 5*yiqr) & (Y <= ymed + 5*yiqr)
+            X = X[idx]
+            Y = Y[idx]
 
             # add plot
             ax = fig.add_subplot(gs[row,col])
@@ -1656,6 +1673,20 @@ def plot_autocorrelations(cells, attrdict, fileout, color1='darkblue', color2='b
             Y = Y * scale
         except KeyError:
             pass
+
+        xmean = np.mean(X)
+        xstd = np.std(X)
+        xmed = np.median(X)
+        xiqr = iqr(X)
+        ymean = np.mean(Y)
+        ystd = np.std(Y)
+        ymed = np.median(Y)
+        yiqr = iqr(Y)
+
+        # filer data
+        idx = (X >= xmed - 5*xiqr) & (X <= xmed + 5*xiqr) &(Y >= ymed - 5*yiqr) & (Y <= ymed + 5*yiqr)
+        X = X[idx]
+        Y = Y[idx]
 
         # add plot
         ax = fig.add_subplot(gs[0,col])
@@ -1841,16 +1872,17 @@ if __name__ == "__main__":
         if not os.path.isdir(popdir):
             os.makedirs(popdir)
         fileout = os.path.join(popdir,'distributions.pdf')
-        try:
-            plot_distributions(cells, attrdict=params['distributions']['attributes'], fileout=fileout)
-        except:
-            print "Error with distributions plotting."
+        plot_distributions(cells, attrdict=params['distributions']['attributes'], fileout=fileout)
+#        try:
+#        except:
+#            print "Error with distributions plotting."
 
     if plot_crosscorr:
         mm3.information ('Plotting cross-correlations.')
         popdir = os.path.join(plotdir,'population')
         if not os.path.isdir(popdir):
             os.makedirs(popdir)
+
         try:
             fileout = os.path.join(popdir,'cross_correlations.pdf')
             plot_cross_correlations(cells, attrdict=params['cross correlations']['attributes'], fileout=fileout, **params['cross correlations']['args'])
@@ -1881,6 +1913,7 @@ if __name__ == "__main__":
             sys.exit("Missing options for scatter plots!")
 
         for filename in filedict.keys():
+            print filename
             fileout = os.path.join(scattdir,filename)
             #def plot_scatter(cells, attrX, attrY, fileout, attrdict, color='darkblue', scatter_max_pts=1000, bin_min=10, bin_method='median', lw=0.5, ms=2, xticks_max=8, yticks_max=8, xformat='{x:.2g}', yformat='{x:.2g}')
         #plot_scatter(cells, attrX=attrX, attrY=attrY, fileout=fileout, attrdict=attrdict, **params['plot_scatter']['args'])

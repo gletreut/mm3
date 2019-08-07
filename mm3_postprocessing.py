@@ -431,8 +431,11 @@ if __name__ == "__main__":
                 cell.C = None
                 cell.D = None
                 cell.taucyc = None
-            if cell.unit_size is None:
-                cell.unit_size = np.nan
+            try:
+                if cell.unit_size is None:
+                    cell.unit_size = np.nan
+            except AttributeError:
+                cell.unit_size=np.nan
 
         ## initiation adder
         for key in data.keys():
@@ -468,8 +471,17 @@ if __name__ == "__main__":
 
                 try:
                     cell.B_min = cell.B * mpf
+                except TypeError:
+                    pass
+                try:
                     cell.D_min = cell.D * mpf
+                except TypeError:
+                    pass
+                try:
                     cell.C_min = cell.C * mpf
+                except TypeError:
+                    pass
+                try:
                     cell.taucyc_min = cell.taucyc * mpf
                 except TypeError:
                     pass
@@ -483,6 +495,7 @@ if __name__ == "__main__":
             for key in data:
                 cell = data[key]
                 w = np.array(cell.widths, dtype=np.float_)*upp
+                w = np.mean(w) # average because otherwise too noisy
                 L = np.array(cell.lengths, dtype=np.float_)*upp
                 cell.volumes = np.pi/4. * w**2*L - np.pi/12. * w**3 # cylinder with hemispherical caps of length L and width w
 
