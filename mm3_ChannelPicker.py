@@ -342,20 +342,25 @@ if __name__ == "__main__":
                                      description='Determines which channels should be analyzed, used as empties for subtraction, or ignored.')
     parser.add_argument('-f', '--paramfile', type=file,
                         required=True, help='Yaml file containing parameters.')
-    parser.add_argument('-o', '--fov',  type=str,
-                        required=False, help='List of fields of view to analyze. Input "1", "1,2,3", etc. ')
     parser.add_argument('-j', '--nproc',  type=int,
                         required=False, help='Number of processors to use.')
     # parser.add_argument('-s', '--specfile',  type=file,
     #                     required=False, help='Filename of specs file.')
     parser.add_argument('-i', '--noninteractive', action='store_true',
                         required=False, help='Do channel picking manually.')
+    parser.add_argument('-d', '--outputdir',  type=str,
+                        required=False, default='.', help='Output directory (tree root).')
     parser.add_argument('-c', '--saved_cross_correlations', action='store_true',
                         required=False, help='Load cross correlation data instead of computing.')
     parser.add_argument('-s', '--specfile', type=file,
                         required=False, help='Path to spec.yaml file.')
     namespace = parser.parse_args()
 
+    # output directory
+    outputdir=namespace.outputdir
+    if not os.path.isdir(outputdir):
+        os.makedirs(outputdir)
+        print("Making directory {:s}".format(outputdir))
 
     # Load the project parameters file
     mm3.information('Loading experiment parameters.')
@@ -364,18 +369,23 @@ if __name__ == "__main__":
     else:
         mm3.warning('No param file specified. Using 100X template.')
         param_file_path = 'yaml_templates/params_SJ110_100X.yaml'
-    p = mm3.init_mm3_helpers(param_file_path) # initialized the helper library
 
-    if namespace.fov:
-        user_spec_fovs = [int(val) for val in namespace.fov.split(",")]
-    else:
-        user_spec_fovs = []
+    # init parameters
+    p = mm3.init_mm3_helpers(param_file_path, experiment_directory=outputdir) # initialized the helper library
+
+    # fovs
+    fovs = None
+    if ('fovs' in p):
+        fovs = p['fovs']
+    if (fovs is None):
+        fovs = []
+    user_spec_fovs = [int(val) for val in fovs]
 
     # number of threads for multiprocessing
     if namespace.nproc:
         p['num_analyzers'] = namespace.nproc
     else:
-        p['num_analyzers'] = 6
+        p['num_analyzers'] = 2
 
     # use previous specfile
     if namespace.specfile:
@@ -392,18 +402,19 @@ if __name__ == "__main__":
     if namespace.saved_cross_correlations:
         do_crosscorrs = False
     else:
-        do_crosscorrs = p['channel_picker']['do_crosscorrs']
+        do_crosscorrs = True
 
     # set interactive flag
     if namespace.noninteractive:
         interactive = False
     else:
-        interactive = p['channel_picker']['interactive']
+        interactive = True
 
     # assign shorthand directory names
-    ana_dir = os.path.join(p['experiment_directory'], p['analysis_directory'])
-    chnl_dir = os.path.join(p['experiment_directory'], p['analysis_directory'], 'channels')
-    hdf5_dir = os.path.join(p['experiment_directory'], p['analysis_directory'], 'hdf5')
+    experiment_directory=outputdir
+    ana_dir = os.path.join(experiment_directory, p['analysis_directory'])
+    chnl_dir = os.path.join(experiment_directory, p['analysis_directory'], 'channels')
+    hdf5_dir = os.path.join(experiment_directory, p['analysis_directory'], 'hdf5')
 
     # load channel masks
     try:
@@ -433,6 +444,7 @@ if __name__ == "__main__":
         except:
             crosscorrs = None
             mm3.information('Precalculated cross-correlations not found.')
+            sys.exit()
 
     else:
         # a nested dict to hold cross corrs per channel per fov.
@@ -453,11 +465,10 @@ if __name__ == "__main__":
                 mm3.information("Calculating cross correlations for peak %d." % peak_id)
 
                 # linear loop
-                # crosscorrs[fov_id][peak_id] = mm3.channel_xcorr(fov_id, peak_id)
+                #crosscorrs[fov_id][peak_id] = mm3.channel_xcorr(fov_id, peak_id)
 
                 # # multiprocessing verion
-                crosscorrs[fov_id][peak_id] = pool.apply_async(mm3.channel_xcorr,
-                                                               args=(fov_id, peak_id,))
+                crosscorrs[fov_id][peak_id] = pool.apply_async(mm3.channel_xcorr, args=(fov_id, peak_id,))
 
             mm3.information('Waiting for cross correlation pool to finish for FOV %d.' % fov_id)
 
@@ -487,7 +498,7 @@ if __name__ == "__main__":
         mm3.information("Wrote cross correlations files.")
 
     ### User selection (channel picking) #####################################################
-    if specfile == None:
+    if specfile is None:
         mm3.information('Initializing specifications file.')
         # nested dictionary of {fov : {peak : spec ...}) for if channel should
         # be analyzed, used for empty, or ignored.
@@ -525,12 +536,12 @@ if __name__ == "__main__":
             specs = fov_choose_channels_UI(fov_id, crosscorrs, specs, UI_images)
     else:
         pass
-        outputdir = os.path.join(ana_dir, "fovs")
-        if not os.path.isdir(outputdir):
-            os.makedirs(outputdir)
+        channel_picker_outputdir = os.path.join(ana_dir, "fovs")
+        if not os.path.isdir(channel_picker_outputdir):
+            os.makedirs(channel_picker_outputdir)
         for fov_id in fov_id_list:
             specs = fov_plot_channels(fov_id, crosscorrs, specs,
-                                      outputdir=outputdir, phase_plane=p['phase_plane'])
+                                      outputdir=channel_picker_outputdir, phase_plane=p['phase_plane'])
 
     # Save out specs file in yaml format
     with open(os.path.join(ana_dir,"specs.yaml"), 'w') as specs_file:

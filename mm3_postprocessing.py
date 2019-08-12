@@ -341,6 +341,22 @@ if __name__ == "__main__":
         sys.exit('Test pkl file written. Exit')
 
 ################################################
+# Compulsory filtering
+################################################
+    # Remove cells without mother or without daughters
+    print print_time(), "Removing cells without mother or daughters..."
+    data_new = {}
+    for key in data:
+        cell = data[key]
+        if (not (cell.parent is None)) and (not (cell.daughters is None)):
+            data_new[key] = cell
+    data = data_new
+
+    ncells = len(data)
+    print "ncells = {:d}".format(ncells)
+    suffix += ["complete"]
+
+################################################
 # cell cycle
 ################################################
     # initialize new attributes
@@ -522,19 +538,6 @@ if __name__ == "__main__":
     if not namespace.nofilters:
         suffix.append("filtered")
         params = allparams['filters']
-        # Remove cells without mother or without daughters
-        print print_time(), "Removing cells without mother or daughters..."
-        data_new = {}
-        for key in data:
-            cell = data[key]
-            if (not (cell.parent is None)) and (not (cell.daughters is None)):
-                data_new[key] = cell
-        data = data_new
-
-        ncells = len(data)
-        print "ncells = {:d}".format(ncells)
-        suffix += ["complete"]
-
         # Generation index
         print print_time(), "Selecting cell indexes..."
         try:

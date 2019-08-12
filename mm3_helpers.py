@@ -21,6 +21,7 @@ import copy # not sure this is needed
 import h5py # working with HDF5 files
 
 # scipy and image analysis
+import cv2
 from scipy.signal import find_peaks_cwt # used in channel finding
 from scipy.optimize import curve_fit # fitting ring profile
 from scipy.optimize import leastsq # fitting 2d gaussian
@@ -48,6 +49,9 @@ mpl.rc('font', **font)
 mpl.rcParams['pdf.fonttype'] = 42
 import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
+
+# global variables
+verbose=False
 
 # user modules
 # realpath() will make your script run, even if you symlink it
@@ -80,7 +84,7 @@ def information(*objs):
     print(time.strftime("%H:%M:%S", time.localtime()), *objs, file=sys.stdout)
 
 # load the parameters file into a global dictionary for this module
-def init_mm3_helpers(param_file_path):
+def init_mm3_helpers(param_file_path, experiment_directory='.'):
     # load all the parameters into a global dictionary
     global params
     with open(param_file_path, 'r') as param_file:
@@ -91,8 +95,8 @@ def init_mm3_helpers(param_file_path):
     params['num_analyzers'] = cpu_count*2 - 2
 
     # useful folder shorthands for opening files
-    params['TIFF_dir'] = os.path.join(params['experiment_directory'], params['image_directory'])
-    params['ana_dir'] = os.path.join(params['experiment_directory'], params['analysis_directory'])
+    params['TIFF_dir'] = os.path.join(experiment_directory, params['image_directory'])
+    params['ana_dir'] = os.path.join(experiment_directory, params['analysis_directory'])
     params['hdf5_dir'] = os.path.join(params['ana_dir'], 'hdf5')
     params['chnl_dir'] = os.path.join(params['ana_dir'], 'channels')
     params['empty_dir'] = os.path.join(params['ana_dir'], 'empties')
@@ -114,6 +118,18 @@ def julian_day_number():
 
     return jdn
 
+def get_expname(filepath):
+    # match time pattern
+    pattern = '(_t\d+\w+.tif)'
+    res = re.search(pattern,filepath)
+    if (res != None):
+         myend = res.group(1)
+    else:
+        return None
+    ind = filepath.find(myend)
+    pref = filepath[:ind]
+    return pref
+
 def get_plane(filepath):
     pattern = '(c\d+).tif'
     res = re.search(pattern,filepath)
@@ -122,19 +138,25 @@ def get_plane(filepath):
     else:
         return None
 
-def get_fov(filepath):
+def get_fov(filepath, string=False):
     pattern = 'xy(\d+)\w*.tif'
     res = re.search(pattern,filepath)
     if (res != None):
-        return int(res.group(1))
+        if (string):
+            return res.group(1)
+        else:
+            return int(res.group(1))
     else:
         return None
 
-def get_time(filepath):
+def get_time(filepath, string=False):
     pattern = 't(\d+)xy\w+.tif'
     res = re.search(pattern,filepath)
     if (res != None):
-        return np.int_(res.group(1))
+        if (string):
+            return res.group(1)
+        else:
+            return int(res.group(1))
     else:
         return None
 
@@ -164,17 +186,23 @@ def load_stack(fov_id, peak_id, color='c1'):
     image_stack : np.ndarray
         The image stack through time. Shape is (t, y, x)
     '''
+    global params
+
+    fmt_fov = params['formats']['fov']
+    fmt_peak = params['formats']['peak']
+    fmt_plane = params['formats']['plane']
 
     # things are slightly different for empty channels
     if 'empty' in color:
         if params['output'] == 'TIFF':
-            img_filename = params['experiment_name'] + '_xy%03d_%s.tif' % (fov_id, color)
+            img_filename = params['experiment_name'] + '_' + fmt_fov + '_%s.tif'
+            img_filename = img_filename % (fov_id, color)
 
             with tiff.TiffFile(os.path.join(params['empty_dir'],img_filename)) as tif:
                 img_stack = tif.asarray()
 
         if params['output'] == 'HDF5':
-            with h5py.File(os.path.join(params['hdf5_dir'],'xy%03d.hdf5' % fov_id), 'r') as h5f:
+            with h5py.File(os.path.join(params['hdf5_dir'], fmt_fov % fov_id + '.hdf5'), 'r') as h5f:
                 img_stack = h5f[color][:]
 
         return img_stack
@@ -188,16 +216,18 @@ def load_stack(fov_id, peak_id, color='c1'):
         elif 'seg' in color:
             img_dir = params['seg_dir']
 
-        img_filename = params['experiment_name'] + '_xy%03d_p%04d_%s.tif' % (fov_id, peak_id, color)
+        img_filename = params['experiment_name'] + '_' + fmt_fov + '_' + fmt_peak + '_%s.tif'
+        img_filename = img_filename % (fov_id, peak_id, color)
 
         with tiff.TiffFile(os.path.join(img_dir, img_filename)) as tif:
             img_stack = tif.asarray()
 
     if params['output'] == 'HDF5':
-        with h5py.File(os.path.join(params['hdf5_dir'], 'xy%03d.hdf5' % fov_id), 'r') as h5f:
+        with h5py.File(os.path.join(params['hdf5_dir'], fmt_fov % fov_id + '.hdf5'), 'r') as h5f:
             # normal naming
             # need to use [:] to get a copy, else it references the closed hdf5 dataset
-            img_stack = h5f['channel_%04d/p%04d_%s' % (peak_id, peak_id, color)][:]
+            #img_stack = h5f['channel_%04d/p%04d_%s' % (peak_id, peak_id, color)][:]
+            img_stack = h5f['channel_' + fmt_fov + '/p' + fmt_peak + '_%s' % (fov_id, peak_id, color)][:]
 
     return img_stack
 
@@ -479,6 +509,13 @@ def tiff_stack_slice_and_write(images_to_write, channel_masks, analyzed_imgs):
 
     # go through list of images and get the file path
     for n, image in enumerate(images_to_write):
+        fbname = image[0]
+        fpref = get_expname(fbname)
+        fov_str = get_fov(fbname, string=True)
+        plane_str = get_plane(fbname)
+        if (plane_str is None):
+            plane_str="c1"
+
         # analyzed_imgs dictionary will be found in main scope. [0] is the key, [1] is jd
         image_params = analyzed_imgs[image[0]]
 
@@ -521,7 +558,8 @@ def tiff_stack_slice_and_write(images_to_write, channel_masks, analyzed_imgs):
         for color_index in range(channel_stack.shape[3]):
             # this is the filename for the channel
             # # chnl_dir and p will be looked for in the scope above (__main__)
-            channel_filename = os.path.join(params['chnl_dir'], params['experiment_name'] + '_xy%03d_p%04d_c%1d.tif' % (fov_id, peak, color_index+1))
+            #channel_filename = os.path.join(params['chnl_dir'], fpref + '_xy%03d_p%04d_c%1d.tif' % (fov_id, peak, color_index+1))
+            channel_filename = os.path.join(params['chnl_dir'], fpref + '_xy' + fov_str + '_p%04d' %(peak) + "_%s" %(plane_str) + '.tif')
             # save stack
             tiff.imsave(channel_filename, channel_stack[:,:,:,color_index], compress=4)
 
@@ -534,6 +572,8 @@ def hdf5_stack_slice_and_write(images_to_write, channel_masks, analyzed_imgs):
     Called by
     __main__
     '''
+
+
 
     # make an array of images and then concatenate them into one big stack
     image_fov_stack = []
@@ -1036,6 +1076,11 @@ def average_empties_stack(fov_id, specs, color='c1', align=True):
         Saves empty stack to analysis folder
 
     '''
+    global params
+
+    fmt_fov = params['formats']['fov']
+    fmt_peak = params['formats']['peak']
+    fmt_plane = params['formats']['plane']
 
     information("Creating average empty channel for FOV %d." % fov_id)
 
@@ -1087,11 +1132,11 @@ def average_empties_stack(fov_id, specs, color='c1', align=True):
     # save out data
     if params['output'] == 'TIFF':
         # make new name and save it
-        empty_filename = params['experiment_name'] + '_xy%03d_empty_%s.tif' % (fov_id, color)
+        empty_filename = (params['experiment_name'] + '_' + fmt_fov + '_empty_%s.tif') % (fov_id, color)
         tiff.imsave(os.path.join(params['empty_dir'],empty_filename), avg_empty_stack, compress=4)
 
     if params['output'] == 'HDF5':
-        h5f = h5py.File(os.path.join(params['hdf5_dir'],'xy%03d.hdf5' % fov_id), 'r+')
+        h5f = h5py.File(os.path.join(params['hdf5_dir'], (fmt_fov + '.hdf5') % fov_id), 'r+')
 
         # delete the dataset if it exists (important for debug)
         if 'empty_%s' % color in h5f:
@@ -1173,6 +1218,13 @@ def average_empties(imgs, align=True):
 def copy_empty_stack(from_fov, to_fov, color='c1'):
     '''Copy an empty stack from one FOV to another'''
 
+    global params
+
+    fmt_fov = params['formats']['fov']
+    fmt_peak = params['formats']['peak']
+    fmt_plane = params['formats']['plane']
+
+
     # load empty stack from one FOV
     information('Loading empty stack from FOV {} to save for FOV {}.'.format(from_fov, to_fov))
     avg_empty_stack = load_stack(from_fov, 0, color='empty_{}'.format(color))
@@ -1180,11 +1232,11 @@ def copy_empty_stack(from_fov, to_fov, color='c1'):
     # save out data
     if params['output'] == 'TIFF':
         # make new name and save it
-        empty_filename = params['experiment_name'] + '_xy%03d_empty_%s.tif' % (to_fov, color)
+        empty_filename = (params['experiment_name'] + '_'+fmt_fov+'_empty_%s.tif') % (to_fov, color)
         tiff.imsave(os.path.join(params['empty_dir'],empty_filename), avg_empty_stack, compress=4)
 
     if params['output'] == 'HDF5':
-        h5f = h5py.File(os.path.join(params['hdf5_dir'],'xy%03d.hdf5' % to_fov), 'r+')
+        h5f = h5py.File(os.path.join(params['hdf5_dir'], (fmt_fov + '.hdf5') % to_fov), 'r+')
 
         # delete the dataset if it exists (important for debug)
         if 'empty_%s' % color in h5f:
@@ -1221,6 +1273,11 @@ def subtract_fov_stack(fov_id, specs, color='c1', method='phase',nproc=2):
     mm3.subtract_phase
 
     '''
+    global params
+    fmt_fov = params['formats']['fov']
+    fmt_peak = params['formats']['peak']
+    fmt_plane = params['formats']['plane']
+
 
     information('Subtracting peaks for FOV %d.' % fov_id)
 
@@ -1269,11 +1326,11 @@ def subtract_fov_stack(fov_id, specs, color='c1', method='phase',nproc=2):
 
         # save out the subtracted stack
         if params['output'] == 'TIFF':
-            sub_filename = params['experiment_name'] + '_xy%03d_p%04d_sub_%s.tif' % (fov_id, peak_id, color)
+            sub_filename = (params['experiment_name'] + '_'+fmt_fov+'_'+fmt_peak+'_sub_%s.tif') % (fov_id, peak_id, color)
             tiff.imsave(os.path.join(params['sub_dir'],sub_filename), subtracted_stack, compress=4) # save it
 
         if params['output'] == 'HDF5':
-            h5f = h5py.File(os.path.join(params['hdf5_dir'],'xy%03d.hdf5' % fov_id), 'r+')
+            h5f = h5py.File(os.path.join(params['hdf5_dir'],(fmt_fov+'.hdf5') % fov_id), 'r+')
 
             # put subtracted channel in correct group
             h5g = h5f['channel_%04d' % peak_id]
@@ -1405,26 +1462,31 @@ def segment_chnl_stack(fov_id, peak_id,nproc=2):
     Calls
     mm3.segment_image
     '''
+    global params
+    fmt_fov = params['formats']['fov']
+    fmt_peak = params['formats']['peak']
+    fmt_plane = params['formats']['plane']
+
 
     information('Segmenting FOV %d, channel %d.' % (fov_id, peak_id))
 
     # load subtracted images
     sub_stack = load_stack(fov_id, peak_id, color='sub_{}'.format(params['phase_plane']))
 
-    # set up multiprocessing pool to do segmentation. Will do everything before going on.
-    #pool = Pool(processes=params['num_analyzers'])
-    pool = Pool(nproc)
+#    # set up multiprocessing pool to do segmentation. Will do everything before going on.
+#    #pool = Pool(processes=params['num_analyzers'])
+#    pool = Pool(nproc)
+#
+#    # send the 3d array to multiprocessing
+#    segmented_imgs = pool.map(segment_image, sub_stack, chunksize=8)
+#
+#    pool.close() # tells the process nothing more will be added.
+#    pool.join() # blocks script until everything has been processed and workers exit
 
-    # send the 3d array to multiprocessing
-    segmented_imgs = pool.map(segment_image, sub_stack, chunksize=8)
-
-    pool.close() # tells the process nothing more will be added.
-    pool.join() # blocks script until everything has been processed and workers exit
-
-    # # image by image for debug
-    # segmented_imgs = []
-    # for sub_image in sub_stack:
-    #     segmented_imgs.append(segment_image(sub_image))
+    # image by image for debug
+    segmented_imgs = []
+    for sub_image in sub_stack:
+        segmented_imgs.append(segment_image(sub_image))
 
     # stack them up along a time axis
     segmented_imgs = np.stack(segmented_imgs, axis=0)
@@ -1432,12 +1494,12 @@ def segment_chnl_stack(fov_id, peak_id,nproc=2):
 
     # save out the subtracted stack
     if params['output'] == 'TIFF':
-        seg_filename = params['experiment_name'] + '_xy%03d_p%04d_seg.tif' % (fov_id, peak_id)
+        seg_filename = (params['experiment_name'] + '_'+fmt_fov+'_'+fmt_peak+'_seg.tif') % (fov_id, peak_id)
         tiff.imsave(os.path.join(params['seg_dir'],seg_filename),
                     segmented_imgs.astype('uint16'), compress=4)
 
     if params['output'] == 'HDF5':
-        h5f = h5py.File(os.path.join(params['hdf5_dir'],'xy%03d.hdf5' % fov_id), 'r+')
+        h5f = h5py.File(os.path.join(params['hdf5_dir'],(fmt_fov+'.hdf5') % fov_id), 'r+')
 
         # put segmented channel in correct group
         h5g = h5f['channel_%04d' % peak_id]
@@ -1469,21 +1531,59 @@ def segment_image(image):
         should correspond to cells, all have the same integer value starting with 1.
         Non labeled area should have value zero.
     '''
+    global verbose
+
+    # parameters
+    norm8 = int(2**8-1)
+    norm16 = int(2**16-1)
 
     # load in segmentation parameters
-    OTSU_threshold = params['OTSU_threshold']
+    #OTSU_threshold = params['OTSU_threshold']
+    threshold = params['threshold']
     first_opening_size = params['first_opening_size']
     distance_threshold = params['distance_threshold']
     second_opening_size = params['second_opening_size']
     min_object_size = params['min_object_size']
 
-    # threshold image
-    try:
-        thresh = threshold_otsu(image) # finds optimal OTSU threshhold value
-    except:
-        return np.zeros_like(image)
+    # rescale dynamic range linearly (important for OTSU)
+    # assuming the input image is in 16-bit format
+    img = np.array(image, dtype=np.float_) / float(norm16)    # convert to float
+    amin = np.min(img)
+    amax = np.max(img)
 
-    threshholded = image > OTSU_threshold*thresh # will create binary image
+    if (verbose):
+        print ("Image px value (16-bits) min = {:.1g}    max = {:.1g}".format(amin,amax))
+    img = (np.float_(img) - amin)/(amax-amin)   # float image [0,1]
+    #return np.array(img*norm16, dtype=np.uint16)
+
+    # convert to 8-bit image (Open CV requirement for OTSU)
+    img = np.array(img*float(norm8),np.uint8)
+    if threshold is None:
+        if (verbose):
+            print ("OTSU thresholding")
+        #return np.array(img)
+        # OTSU threshold
+        ret,img_bin = cv2.threshold(img, 0, 255, cv2.THRESH_BINARY+cv2.THRESH_OTSU)
+        thres1 = float(ret)/norm8*(amax-amin) + amin
+        #thres1 = float(ret)/norm8
+        thres8 = np.uint8(thres1*norm8)
+        thres16 = np.uint16(thres1*norm16)
+    else:
+        thres16 = np.uint16(threshold)
+        thres1 = float(threshold) / norm16
+        thres8 = np.uint8(thres1*norm8)
+        ret = max((thres1 - amin)/(amax-amin),0) # value in rescaled DNR
+        ret = np.uint8(255*ret) # uint8
+        #print ("thres1 = {:.1g}    threshold_rescaled_DNR_uint8 = {:d}".format(thres1,ret))
+        # input threshold
+        ret1,img_bin = cv2.threshold(img,ret,255,cv2.THRESH_BINARY)
+
+    if (verbose):
+        print ("thres16 = {:d} (original image). thres1 = {:.1g}    thres8 = {:d}".format(thres16, thres1, thres8))
+    #img = img*(amax-amin) + amin   # back to original scaling if needed
+
+    threshholded = np.array(img_bin/norm8, dtype=np.bool)
+    #threshholded = img > OTSU_threshold*thresh # will create binary image
 
     # if there are no cells, good to clear the border
     # because otherwise the OTSU is just for random bullshit, most

@@ -40,11 +40,12 @@ if __name__ == "__main__":
                                      description='Segment cells and create lineages.')
     parser.add_argument('-f', '--paramfile',  type=file,
                         required=True, help='Yaml file containing parameters.')
-    parser.add_argument('-o', '--fov',  type=str,
-                        required=False, help='List of fields of view to analyze. Input "1", "1,2,3", etc. ')
     parser.add_argument('-j', '--nproc',  type=int,
                         required=False, help='Number of processors to use.')
     namespace = parser.parse_args()
+
+    # number of threads for multiprocessing
+    nproc = namespace.nproc
 
     # Load the project parameters file
     mm3.information('Loading experiment parameters.')
@@ -55,15 +56,6 @@ if __name__ == "__main__":
         param_file_path = 'yaml_templates/params_SJ110_100X.yaml'
 
     p = mm3.init_mm3_helpers(param_file_path) # initialized the helper library
-
-    if namespace.fov:
-        user_spec_fovs = [int(val) for val in namespace.fov.split(",")]
-    else:
-        user_spec_fovs = []
-
-    # number of threads for multiprocessing
-    if namespace.nproc:
-        p['num_analyzers'] = namespace.nproc
 
     # create segmenteation and cell data folder if they don't exist
     if not os.path.exists(p['seg_dir']) and p['output'] == 'TIFF':
@@ -78,6 +70,14 @@ if __name__ == "__main__":
     except:
         mm3.warning('Could not load specs file.')
         raise ValueError
+
+    # fovs
+    fovs = None
+    if ('fovs' in p):
+        fovs = p['fovs']
+    if (fovs is None):
+        fovs = []
+    user_spec_fovs = [int(val) for val in fovs]
 
     # make list of FOVs to process (keys of channel_mask file)
     fov_id_list = sorted([fov_id for fov_id in specs.keys()])
