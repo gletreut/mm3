@@ -53,11 +53,17 @@ if __name__ == "__main__":
                                      description='Identifies and slices out channels into individual TIFF stacks through time.')
     parser.add_argument('-f', '--paramfile',  type=file,
                         required=True, help='Yaml file containing parameters.')
-    parser.add_argument('-o', '--fov',  type=str,
-                        required=False, help='List of fields of view to analyze. Input "1", "1,2,3", etc. ')
+    parser.add_argument('-d', '--outputdir',  type=str,
+                        required=False, default='.', help='Yaml file containing parameters.')
     parser.add_argument('-j', '--nproc',  type=int,
                         required=False, help='Number of processors to use.')
     namespace = parser.parse_args()
+
+    # output directory
+    outputdir=namespace.outputdir
+    if not os.path.isdir(outputdir):
+        os.makedirs(outputdir)
+        print("Making directory {:s}".format(outputdir))
 
     # Load the project parameters file
     mm3.information('Loading experiment parameters.')
@@ -66,12 +72,17 @@ if __name__ == "__main__":
     else:
         mm3.warning('No param file specified. Using 100X template.')
         param_file_path = 'yaml_templates/params_SJ110_100X.yaml'
-    p = mm3.init_mm3_helpers(param_file_path) # initialized the helper library
 
-    if namespace.fov:
-        user_spec_fovs = [int(val) for val in namespace.fov.split(",")]
-    else:
-        user_spec_fovs = []
+    # init parameters
+    p = mm3.init_mm3_helpers(param_file_path, experiment_directory=outputdir) # initialized the helper library
+
+    # fovs
+    fovs = None
+    if ('fovs' in p):
+        fovs = p['fovs']
+    if (fovs is None):
+        fovs = []
+    user_spec_fovs = [int(val) for val in fovs]
 
     # number of threads for multiprocessing
     if namespace.nproc:
@@ -102,6 +113,7 @@ if __name__ == "__main__":
 
     else:
         mm3.information("Finding image parameters.")
+
 
         # get all the TIFFs in the folder
         found_files = glob.glob(os.path.join(p['TIFF_dir'],'*.tif')) # get all tiffs
