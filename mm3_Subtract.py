@@ -52,8 +52,6 @@ if __name__ == "__main__":
                         required=True, help='Yaml file containing parameters.')
     parser.add_argument('-j', '--nproc',  type=int,
                         required=False, default=2, help='Number of processors to use.')
-    parser.add_argument('-c', '--color', type=str,
-                        required=False, help='Color plane to subtract. "c1", "c2", etc.')
     namespace = parser.parse_args()
 
     # Load the project parameters file
@@ -69,9 +67,8 @@ if __name__ == "__main__":
     nproc = namespace.nproc
 
     # which color channel with which to do subtraction
-    if namespace.color:
-        sub_plane = namespace.color
-    else:
+    sub_plane = p['subtract']['color']
+    if sub_plane is None:
         sub_plane = 'c1'
 
     # Create folders for subtracted info if they don't exist

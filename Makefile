@@ -2,56 +2,81 @@ EXPNAME := SJ1798_MOPSgly17aa_arab02pc_001
 #TIFFS := ./TIFF/$(EXPNAME)*.tif
 PARAMPROCESSING := roles/params_processing.yaml
 ND2 := ../data/$(EXPNAME).nd2
+NPROC := 2
 
-# targets
+PARAMPOSTPROCESSING := roles/params_postprocessing.yaml
+ALLCELLS := analysis/cell_data/all_cells.pkl
+
+# variables
 TIFF := target_tiff
 COMPILE := target_compile
+PICKING := target_picking
+PICKED := target_picked
+SUBTRACT := target_subtract
+SEGMENT := target_segment
+POSTPROCESS := target_postprocess
+OBJ_COMPILE := analysis/TIFF_metadata.pkl analysis/channel_masks.pkl analysis/time_table.pkl
+OBJ_PICKING := specs_picking.yaml analysis/crosscorrs.pkl
+OBJ_PICKED := analysis/specs.yaml
 
-all: $(TIFF)
+all:
 
-#$(TIFF): $(PARAMPROCESSING)
-$(TIFF): $(ND2)
+# dummy targets
+dummy:
+	touch $(TIFF)
+	touch $(COMPILE)
+	touch $(PICKING)
+	touch $(PICKED)
+	touch $(SUBTRACT)
+	touch $(SEGMENT)
+	touch $(POSTPROCESS)
+
+##############################################################################
+# IMAGE PROCESSING TARGETS
+##############################################################################
+
+# mm3_nd2ToTIFF.py
+$(TIFF): $(ND2) $(PARAMPROCESSING)
 	python mm3/mm3_nd2ToTIFF.py -f $(PARAMPROCESSING) $(ND2)
 	touch $(TIFF)
 
+# mm3_Compile.py
 $(COMPILE): $(TIFF) $(PARAMPROCESSING)
-	python mm3/mm3_Compile.py -f $(PARAMPROCESSING) -j 2
+	python mm3/mm3_Compile.py -f $(PARAMPROCESSING) -j $(NPROC)
 	touch $(COMPILE)
 
-### TO DELETE
-#OBJS = $(SRC:.cpp=.o)
-#PROG = ../bin/prog
-#PROG_DEBUG = ../bin/prog_debug
-#all: $(PROG)
-#debug: $(PROG_DEBUG)
-#
-#$(PROG): $(OBJS)
-#	 $(CC) $(CFLAGS) $(OBJS) -o $@ $(LDFLAGS) $(LDLIBS)
+# mm3_ChannelPicker.py
+$(PICKING): $(COMPILE) $(PARAMPROCESSING)
+	python mm3/mm3_ChannelPicker.py -f $(PARAMPROCESSING) -i -j $(NPROC)
+	cp analysis/specs.yaml specs_picking.yaml
+	touch $(PICKING)
 
-#main.o: utils.h cell.h global.h main.cpp
-#	$(CC) $(CFLAGS) -c main.cpp
-#
-#cell.o: cell.h cell.cpp
-#	$(CC) $(CFLAGS) -c cell.cpp
-#
-#utils.o: utils.h utils.tpp utils.cpp
-#	$(CC) $(CFLAGS) -c utils.cpp
-#
-#linalg.o: linalg.h linalg.cpp
-#	$(CC) $(CFLAGS) -c linalg.cpp
-#
-#physics.o: physics.h physics.cpp
-#	$(CC) $(CFLAGS) -c physics.cpp
-#
-#stepper.o: stepper.h stepper.cpp
-#	$(CC) $(CFLAGS) -c stepper.cpp
-#
-#clean:
-#	rm -f *~ *.o $(PROG) core a.out
-#
-#$(PROG_DEBUG): main_debug.o cell.o utils.o linalg.o physics.o stepper.o
-#	 $(CC) $(CFLAGS) main_debug.o cell.o utils.o linalg.o physics.o stepper.o -o $@ $(LDFLAGS) $(LDLIBS)
-#
-#main_debug.o: utils.h cell.h global.h main_debug.cpp
-#	$(CC) $(CFLAGS) -c main_debug.cpp
+$(PICKED): specs_picking.yaml $(PICKING) $(PARAMPROCESSING)
+	python mm3/mm3_ChannelPicker.py -f $(PARAMPROCESSING) -i -c -s specs_picking.yaml -j $(NPROC)
+	touch $(PICKED)
+
+# mm3_Subtract.py
+$(SUBTRACT): $(PICKED) $(PARAMPROCESSING)
+	python mm3/mm3_Subtract.py -f $(PARAMPROCESSING) -j $(NPROC)
+	touch $(SUBTRACT)
+
+# mm3_Segment.py
+$(SEGMENT): $(SUBTRACT) $(PARAMPROCESSING)
+	python mm3/mm3_Segment.py -f $(PARAMPROCESSING) -j $(NPROC)
+	touch $(SEGMENT)
+
+##############################################################################
+# POSTPROCESSING TARGETS
+##############################################################################
+
+# mm3_postprocessing.py
+$(POSTPROCESS): $(PARAMPOSTPROCESSING)
+	python mm3/mm3_postprocessing.py -f $(PARAMPOSTPROCESSING) $(ALLCELLS)
+	touch $(POSTPROCESS)
+
+##############################################################################
+# HELP AND DOC ON MAKEFILES
+##############################################################################
+# https://www.gnu.org/software/make/manual/make.html
+# https://makefiletutorial.com/
 
