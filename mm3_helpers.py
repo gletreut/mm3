@@ -512,9 +512,6 @@ def tiff_stack_slice_and_write(images_to_write, channel_masks, analyzed_imgs):
         fbname = image[0]
         fpref = get_expname(fbname)
         fov_str = get_fov(fbname, string=True)
-        plane_str = get_plane(fbname)
-        if (plane_str is None):
-            plane_str="c1"
 
         # analyzed_imgs dictionary will be found in main scope. [0] is the key, [1] is jd
         image_params = analyzed_imgs[image[0]]
@@ -559,7 +556,7 @@ def tiff_stack_slice_and_write(images_to_write, channel_masks, analyzed_imgs):
             # this is the filename for the channel
             # # chnl_dir and p will be looked for in the scope above (__main__)
             #channel_filename = os.path.join(params['chnl_dir'], fpref + '_xy%03d_p%04d_c%1d.tif' % (fov_id, peak, color_index+1))
-            channel_filename = os.path.join(params['chnl_dir'], fpref + '_xy' + fov_str + '_p%04d' %(peak) + "_%s" %(plane_str) + '.tif')
+            channel_filename = os.path.join(params['chnl_dir'], fpref + '_xy' + fov_str + '_p%04d' %(peak) + "_c%1d" %(color_index+1) + '.tif')
             # save stack
             tiff.imsave(channel_filename, channel_stack[:,:,:,color_index], compress=4)
 

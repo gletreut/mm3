@@ -67,7 +67,7 @@ if __name__ == "__main__":
     nproc = namespace.nproc
 
     # which color channel with which to do subtraction
-    sub_plane = p['subtract']['color']
+    sub_plane = p['phase_plane']
     if sub_plane is None:
         sub_plane = 'c1'
 
