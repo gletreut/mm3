@@ -49,19 +49,6 @@ if __name__ == "__main__":
     allparams = yaml.load(namespace.paramfile)
     fov = namespace.fov
     debug=namespace.debug
-    if debug:
-        debugdir = 'debug'
-        if not os.path.isdir(debugdir):
-            os.makedirs(debugdir)
-
-    if not (namespace.histograms is None):
-        hist_list = namespace.histograms
-        histdir='histograms'
-        if not os.path.isdir(histdir):
-            os.makedirs(histdir)
-    else:
-        hist_list = []
-
     # first initialization of parameters
     params = allparams['movie']
 
@@ -75,6 +62,19 @@ if __name__ == "__main__":
         movie_dir = os.path.join('.', movie_dir)
     if not os.path.isdir(movie_dir):
         os.makedirs(movie_dir)
+
+    if debug:
+        debugdir = os.path.join(movie_dir,'debug')
+        if not os.path.isdir(debugdir):
+            os.makedirs(debugdir)
+
+    if not (namespace.histograms is None):
+        hist_list = namespace.histograms
+        histdir=os.path.join(movie_dir,'histograms')
+        if not os.path.isdir(histdir):
+            os.makedirs(histdir)
+    else:
+        hist_list = []
 
 ################################################
 # make list of images
@@ -96,6 +96,8 @@ if __name__ == "__main__":
 
     if (len(filelist) == 0):
         sys.exit("File list is empty!")
+
+    filelist.sort()
 
     # open one image to get dimensions
     fimg=filelist[0]

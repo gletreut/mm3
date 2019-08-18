@@ -6,7 +6,7 @@ import yaml
 import argparse
 
 #################### parameter ####################
-ttol=1  # tolerance on peak difference for mapping
+ttol=2  # tolerance on peak difference for mapping
 
 #################### main ####################
 if __name__ == "__main__":
