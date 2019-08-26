@@ -42,6 +42,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(prog="Making movie from .tif files.")
     parser.add_argument('-f', '--paramfile',  type=file, required=True, help='Yaml file containing parameters.')
     parser.add_argument('-o', '--fov',  type=int, required=True, help='Field of view with which make the movie.')
+    parser.add_argument('-b', '--background',  type=int, required=False, help='Channel to process (no overlay) or that makes the image background (overlay).')
     parser.add_argument('--debug',  action='store_true', required=False, help='Debug mode.')
     parser.add_argument('--histograms',  type=int, nargs='+', required=False, help='Debug mode.')
     namespace = parser.parse_args(sys.argv[1:])
@@ -79,6 +80,23 @@ if __name__ == "__main__":
 ################################################
 # make list of images
 ################################################
+    # background channel
+    if not namespace.background is None:
+        bg = namespace.background
+    elif 'background' in params:
+        bg = params['background']
+    else:
+        sys.exit("Please indicate channel to process with --background option or put in yaml file.")
+
+    # overlays parameter
+    overlay = None
+    try:
+        overlay = params['overlay']
+    except KeyError:
+        pass
+    if overlay is None:
+        overlay = []
+
     exp_name = allparams['experiment_name']
     tiffs = allparams['image_directory']
     pattern = exp_name + '_t(\d+)xy\w+.tif'
@@ -122,6 +140,12 @@ if __name__ == "__main__":
     # path to FFMPEG
     FFMPEG_BIN = sp.check_output("which ffmpeg", shell=True).replace('\n','')
 
+    # output file
+    filepath_mov = os.path.join(movie_dir,allparams['experiment_name']+'_xy%03d' % fov)
+    if len(overlay) == 0:
+        filepath_mov += "_c{:d}".format(bg)
+    filepath_mov += ".mp4"
+
     # path to font for label
     fontfile = "/Library/Fonts/Andale Mono.ttf"    # Mac OS location
     if not os.path.isfile(fontfile):
@@ -147,7 +171,7 @@ if __name__ == "__main__":
             '-pix_fmt', 'yuv420p',
 
             # set the movie name
-            os.path.join(movie_dir,allparams['experiment_name']+'_xy%03d.mp4' % fov)]
+            filepath_mov]
 
     information('Writing movie for FOV %d.' % fov)
 
@@ -272,7 +296,6 @@ if __name__ == "__main__":
                 img_num [img_num < 0] = 0.
                 img_den [img_den < 0] = 0.
 
-
                 # debug purpose
                 if debug:
                     for img_plot,suff in zip([img_num, img_den],["num", "den"]):
@@ -358,18 +381,10 @@ if __name__ == "__main__":
             stack.append(rgb)
 
         # construct final image
-        bg = params['background']
         try:
             img_bg = stack[bg]
         except IndexError:
             sys.exit("Channel {:d} doesn't exist in input data and cannot be used for background.".format(bg))
-
-        # start overlays
-        overlay = []
-        try:
-            overlay = params['overlay']
-        except KeyError:
-            pass
 
         if (not (overlay is None) or (overlay == []) ):
             img = np.zeros(img_bg.shape, dtype=np.float_)
@@ -412,6 +427,55 @@ if __name__ == "__main__":
         r_timestamp = np.dstack((r_timestamp, r_timestamp, r_timestamp)).astype(np.uint8)
         img[mask] = r_timestamp[mask]
 
+        # add custom label
+        if 'labels' in params:
+            labels = params['labels']
+            for label in labels.keys():
+                minidict = params['labels'][label]
+                if ('frame_start' in minidict.keys()) and not (minidict['frame_start'] is None):
+                    ti = minidict['frame_start']
+                    if t < ti:  # skip label
+                        continue
+                if ('frame_end' in minidict.keys()) and not (minidict['frame_end'] is None):
+                    tf = minidict['frame_end']
+                    if t > tf:  # skip label
+                        continue
+
+                # compute label position
+                if ('xy' in minidict.keys()):
+                    if minidict['xy'] is None:
+                        pos_x = 0.01*size_x
+                        pos_y = 0.01*size_y
+                    else:
+                        xf, yf = tuple(minidict['xy'])
+                        pos_x = int(xf*size_x)
+                        pos_y = int((1.-yf)*size_y)
+
+                # color
+                if ('rgb' in minidict.keys()) and not (minidict['rgb'] is None):
+                    rgb = minidict['rgb']
+                else:
+                    rgb=[255,255,255]
+                rgb = np.array(rgb, dtype=np.float_)
+                rgb /= 255.
+
+                # write label
+                if ('fontsize' in minidict.keys()) and not (minidict['fontsize'] is None):
+                    fontsize = minidict['fontsize']
+                else:
+                    fontsize=48
+
+                # write label
+                img_txt = np.fliplr(make_label(label, fontface, size=fontsize,
+                                                   angle=180)).astype('float64')
+                img_txt = np.pad(img_txt, ((pos_y, size_y - pos_y - img_txt.shape[0]),
+                                               (pos_x, size_x - pos_x - img_txt.shape[1])),
+                                               mode = 'constant')
+                mask = (img_txt > 0)
+                img_txt = np.dstack((rgb[0]*img_txt, rgb[1]*img_txt, rgb[2]*img_txt)).astype(np.uint8)
+                img[mask] = img_txt[mask]
+
+
         # add global ratio for ratiometric input
         if ('ratiometric' in params) and (not params['ratiometric'] is None):
             ratiotxt = "ratio = {:.2f}".format(ratiometric_ratio)
@@ -424,6 +488,7 @@ if __name__ == "__main__":
                 mask = (ratio_img > 0)
                 ratio_img = np.dstack((ratio_img, ratio_img, ratio_img)).astype(np.uint8)
                 img[mask] = ratio_img[mask]
+
 
         # debug purpose
         if debug:
