@@ -88,6 +88,7 @@ $(MOVIES): $(PARAMMOVIES)
 		python mm3/mm3_MovieMaker_alternative.py -f $(PARAMMOVIES) -o $$fov --background $$c; \
 		done ; \
 	done
+	touch $(MOVIES)
 
 ##############################################################################
 # UTILS
