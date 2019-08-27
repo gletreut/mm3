@@ -428,7 +428,7 @@ if __name__ == "__main__":
         img[mask] = r_timestamp[mask]
 
         # add custom label
-        if 'labels' in params:
+        if ('labels' in params) and not (params['labels'] is None):
             labels = params['labels']
             for label in labels.keys():
                 minidict = params['labels'][label]

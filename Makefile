@@ -82,12 +82,13 @@ $(PLOTS): $(POSTPROCESS) $(PARAMPOSTPROCESSING)
 # MOVIES
 ##############################################################################
 # mm3_plots_alternative.py
-$(MOVIES): $(PARAMMOVIES)
+$(MOVIES): $(TIFF) $(PARAMMOVIES)
 	for fov in $(MOVIES_FOVS) ; do \
 		for c in $(MOVIES_CHANNELS) ; do \
 		python mm3/mm3_MovieMaker_alternative.py -f $(PARAMMOVIES) -o $$fov --background $$c; \
 		done ; \
 	done
+	touch $(MOVIES)
 
 ##############################################################################
 # UTILS
