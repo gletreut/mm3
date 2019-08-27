@@ -1,4 +1,4 @@
-EXPNAME := SJ1798_MOPSgly17aa_arab02pc_001
+EXPNAME :=  20190820_SJ1798_MOPSAcetate_arab02pc_405ex100ms_488ex200ms
 #TIFFS := ./TIFF/$(EXPNAME)*.tif
 PARAMPROCESSING := roles/params_processing.yaml
 ND2 := ../data/$(EXPNAME).nd2
@@ -9,6 +9,10 @@ ALLCELLS := analysis/cell_data/all_cells.pkl
 FILTEREDCELLS := analysis/cell_data/all_cells_processed_complete_filtered_labels1_fovpeak_continuouslineages.pkl
 LINEAGESFILTEREDCELLS := analysis/cell_data/all_cells_lineages_selection_min3.pkl
 
+PARAMMOVIES := roles/params_movie.yaml
+MOVIES_FOVS := 1 4
+MOVIES_CHANNELS := 0 1 2
+
 # variables
 TIFF := target_tiff
 COMPILE := target_compile
@@ -18,6 +22,7 @@ SUBTRACT := target_subtract
 SEGMENT := target_segment
 POSTPROCESS := target_postprocess
 PLOTS := target_plots
+MOVIES := target_movies
 OBJ_COMPILE := analysis/TIFF_metadata.pkl analysis/channel_masks.pkl analysis/time_table.pkl
 OBJ_PICKING := specs_picking.yaml analysis/crosscorrs.pkl
 OBJ_PICKED := analysis/specs.yaml
@@ -74,6 +79,17 @@ $(PLOTS): $(POSTPROCESS) $(PARAMPOSTPROCESSING)
 	touch $(PLOTS)
 
 ##############################################################################
+# MOVIES
+##############################################################################
+# mm3_plots_alternative.py
+$(MOVIES): $(PARAMMOVIES)
+	for fov in $(MOVIES_FOVS) ; do \
+		for c in $(MOVIES_CHANNELS) ; do \
+		python mm3/mm3_MovieMaker_alternative.py -f $(PARAMMOVIES) -o $$fov --background $$c; \
+		done ; \
+	done
+
+##############################################################################
 # UTILS
 ##############################################################################
 # dummy targets to prevent further processing
@@ -85,6 +101,8 @@ dummy:
 	touch $(SUBTRACT)
 	touch $(SEGMENT)
 	touch $(POSTPROCESS)
+	touch $(PLOTS)
+	touch $(MOVIES)
 
 ##############################################################################
 # HELP AND DOC ON MAKEFILES
