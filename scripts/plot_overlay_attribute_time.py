@@ -20,6 +20,7 @@ import mm3_helpers as mm3
 
 # global settings
 plt.rcParams['axes.linewidth']=0.5
+dpi=300
 
 ############################################################################
 ## FUNCTIONS
@@ -35,6 +36,11 @@ def histogram(X,density=True):
         return np.histogram(X,bins='sturges',density=density)
 
 def get_binned(X,Y,edges):
+    """
+    X and Y are vectors of scalars with the same length.
+    Binning is performed along X.
+    Sub-data sets of Y are returned, corresponding to Y values falling in each bin.
+    """
 
     nbins = len(edges)-1
     digitized = np.digitize(X,edges)
@@ -44,37 +50,146 @@ def get_binned(X,Y,edges):
 
     return Y_binned
 
-def make_binning(x,y,bincount_min, method=np.mean, emethod=np.std):
+def plot_attribute_distribution(data, fileout, attrdict, attr, lw=0.5, ms=1, labels=None, colors=None, bin_width=None, xlo=None, xhi=None, aratio=4./3, units_dx=None):
     """
-    Given a graph (x,y), return a graph (x_binned, y_binned) which is a binned version
-    of the input graph, along x. Standard deviations per bin for the y direction are also returned.
+    Plot overlay of distributions from multiple datasets
     """
-    idx = np.argsort(x)
-    x = x[idx]
-    y = y[idx]
 
-    histx, bins = histogram(x)
-    digitized = np.digitize(x,bins)
-    x_binned=[]
-    y_binned=[]
-    error_binned=[]
-    for i in range(1,len(bins)):
-        ypts = y[digitized == i]
+    # preliminary checks
+    ndata = len(data)
+    if ndata == 0:
+        sys.exit("Empty data sets!")
 
-        if (len(ypts) < bincount_min):
-            continue
+    ## offsets
+    if labels is None:
+        labels = [None]*ndata
 
-        x_binned.append(float(0.5*(bins[i-1] + bins[i])))
-        y_binned.append(float(method(ypts)))
-        error_binned.append(float(emethod(ypts)))
+    if len(labels) != ndata:
+        sys.exit("labels must have same length as data sets!")
 
-    res = {}
-    res['x'] = np.array(x_binned)
-    res['y'] = np.array(y_binned)
-    res['err'] = np.array(error_binned)
-    return res
+    if colors is None:
+        colors = [None]*ndata
 
-def plot_attribute_time(data, fileout, attrdict, attr, time_mode='birth', scatter_max_pts=1000, lw=0.5, ms=2, xformat='{x:.2g}', yformat='{x:.2g}', offsets=None, labels=None, colors=None, bin_width=None, tlo=None, thi=None, aratio=4./3, units_dx=None, units_dy=None, units_dn=None, ylims=None):
+    if len(colors) != ndata:
+        sys.exit("colors must have same length as data sets!")
+
+    # check if attr in attrdict
+    if not (attr in attrdict):
+        sys.exit("Attr: {:s} not found in attrdict".format(attr))
+
+    # build the vectors
+    X_list=[]   # lists of attribute values
+    for n in range(ndata):
+        X = []
+        cells = data[n]
+        for key in cells.keys():
+            cell = cells[key]
+            try:
+                x = np.float_(getattr(cell,attr))
+                if np.isfinite(x):
+                    X.append(x)
+            except (ValueError,AttributeError):
+                continue
+        # end loop cells
+
+        ## rescale
+        try:
+            scale = attrdict[attr]['scale']
+        except (KeyError):
+            scale = None
+        if not scale is None:
+            X = np.array(X)*scale
+
+        ## update
+        X_list.append(np.array(X, dtype=np.float_))
+    # end loop datasets
+
+    # make the binning
+    if xlo is None:
+        xlo = np.min(np.concatenate(X_list))
+    if xhi is None:
+        xhi = np.max(np.concatenate(X_list))
+
+    ## build bins
+    if bin_width is None:
+        hist, bins = histogram(np.concatenate(X_list))
+        bin_width = np.min(np.diff(bins))
+
+    print "bin_width = {:.1g}".format(bin_width)
+    xlo = int(xlo/bin_width)*bin_width
+    xhi = int(xhi/bin_width+0.5)*bin_width
+    nbins = int((xhi-xlo)/bin_width)        # x_i = x_0 (x_lo) + n \Delta
+    xhi = xlo + nbins*bin_width             # x_N = x_0 + N \Delta
+    edges = np.arange(nbins+1, dtype=np.float_)*bin_width + xlo
+    Xbinned = 0.5*(edges[:-1]+edges[1:])
+
+    ## make subsets
+    Xdata_binned_list = []
+    for n in range(ndata):
+        X = X_list[n]
+        Xdata_binned = get_binned(X,X,edges)  # matrix where rows are bin index and columns y-values within
+        Xdata_binned_list.append(Xdata_binned)
+
+    # make the plot
+    ## general plot parameters
+    mm3.information("aratio = {:.2f}".format(aratio))
+    ax_height = 3
+    ax_width = aratio*ax_height
+    figsize = (ax_width, ax_height)
+    fig = plt.figure(num='none', facecolor='w', figsize=figsize)
+    ax=fig.gca()
+
+    ## plot per dataset
+    haslabel=False
+    for n in range(ndata):
+        ### general parameters
+        label = labels[n]
+        color = colors[n]
+        if not label is None:
+            haslabel=True
+
+        ### dataset
+        Xdata_binned = Xdata_binned_list[n]
+        Nbinned = np.array([float(len(Xdata)) for Xdata in Xdata_binned])
+        Ncells = np.sum(Nbinned)
+        F = Nbinned / (Ncells*bin_width)
+
+        ### plot mean/median
+        ax.plot(Xbinned, F, '-o', ms=ms, color=color, mew=lw, lw=lw, label=label)
+        #ax.plot(Xbinned, F, '-o', ms=ms, color=color, mfc='none', mew=lw, lw=lw, label=label)
+
+    ## legend
+    if haslabel:
+        ax.legend(loc='upper left', frameon=False, bbox_to_anchor=(1.0, 1.0), fontsize='x-small')
+
+    ## axes adjustments
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+    ax.spines['left'].set_visible(False)
+    ax.spines['left'].set_smart_bounds(True)
+    ax.spines['bottom'].set_smart_bounds(True)
+    ax.tick_params(axis='both', labelsize='medium', length=4, left=False, labelleft=False)
+
+    if not (units_dx is None):
+        ax.xaxis.set_major_locator(matplotlib.ticker.MultipleLocator(base=units_dx))
+
+    ax.set_xlim(xlo, xhi)
+    ax.set_ylim(0., None)
+
+    try:
+        ax.set_xlabel(attrdict[attr]['label'], fontsize='medium')
+    except KeyError:
+        axes.set_xlabel(attr, fontsize='medium')
+
+    ## last configurations
+    fig.tight_layout()
+    fig.savefig(fileout, bbox_inches='tight', pad_inches=0, dpi=dpi)
+    mm3.information("{:<20s}{:<s}".format('fileout',fileout))
+    plt.close('all')
+
+    return
+
+def plot_attribute_time(data, fileout, attrdict, attr, time_mode='birth', scatter_max_pts=1000, lw=0.5, ms=2, xformat='{x:.2g}', yformat='{x:.2g}', offsets=None, labels=None, colors=None, bin_width=None, tlo=None, thi=None, aratio=4./3, units_dt=None, units_dy=None, units_dn=None, ylims=None):
     """
     Plot overlay of multiple datasets
     """
@@ -157,7 +272,6 @@ def plot_attribute_time(data, fileout, attrdict, attr, time_mode='birth', scatte
         ## prints
         tmin, tmax = np.nanmin(T_birth), np.nanmax(T_division)
         print "dataset {:d}    tmin = {:.1f}    tmax = {:.1f}    dt = {:.1f}    offset = {:.1f}".format(n, tmin, tmax, dt, offset)
-
 
         ## rescale
         try:
@@ -284,8 +398,8 @@ def plot_attribute_time(data, fileout, attrdict, attr, time_mode='birth', scatte
     axes[1].spines['left'].set_smart_bounds(True)
     axes[1].spines['bottom'].set_smart_bounds(True)
 
-    if not (units_dx is None):
-        axes[0].xaxis.set_major_locator(matplotlib.ticker.MultipleLocator(base=units_dx))
+    if not (units_dt is None):
+        axes[0].xaxis.set_major_locator(matplotlib.ticker.MultipleLocator(base=units_dt))
 
     if not (units_dy is None):
         axes[0].yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(base=units_dy))
@@ -310,11 +424,11 @@ def plot_attribute_time(data, fileout, attrdict, attr, time_mode='birth', scatte
     ## last configurations
     rect = [0.,0.,1.,1.]
     gs.tight_layout(fig, rect=rect, pad=0.5)
-    fig.savefig(fileout, bbox_inches='tight', pad_inches=0, dpi=300)
+    fig.savefig(fileout, bbox_inches='tight', pad_inches=0, dpi=dpi)
     mm3.information("{:<20s}{:<s}".format('fileout',fileout))
+    plt.close('all')
 
     return
-
 
 ############################################################################
 ## MAIN
@@ -327,7 +441,9 @@ if __name__ == "__main__":
 #    parser.add_argument('--distributions',  action='store_true', help='Plot the distributions of cell variables.')
 #    parser.add_argument('--crosscorrelations',  action='store_true', help='Plot the cross-correlation of cell variables.')
 #    parser.add_argument('--autocorrelations',  action='store_true', help='Plot the autocorrelation of cell variables.')
+    parser.add_argument('--show_attributes',  action='store_true', help='Show the attributes of the first cell of each dat set.')
     parser.add_argument('--attribute_time',  action='store_true', help='Plot the scatter plots specified in the Yaml file.')
+    parser.add_argument('--attribute_distribution',  action='store_true', help='Plot the distributions of the attributes specified in the Yaml file.')
 #    parser.add_argument('-l', '--lineagesfile',  type=file, help='Pickle file containing the list of lineages.')
 
     # load arguments
@@ -352,7 +468,49 @@ if __name__ == "__main__":
         cells = pkl.load(namespace.pklfile[n])
         data.append(cells)
 
+    # show attributes
+    if namespace.show_attributes:
+        for n in range(ndata):
+            cells = data[n]
+            key = cells.keys()[0]
+            cell = cells[key]
+            attrs = vars(cell).keys()
+            attrs.sort()
+            print "-"*76
+            print "dataset {:d}".format(n)
+            for attr in attrs:
+                print "{:<20s}".format(attr)
+
     # plots
+    ## general
+    try:
+        colors = params['colors']
+        labels = params['labels']
+        attrdict = params['attributes']
+    except KeyError:
+        sys.exit("Missing options in param file!")
+
+    ## attribute distributions
+    if namespace.attribute_distribution:
+        mm3.information ('Plotting attribute distributions.')
+        plotdir = os.path.join(outputdir,'attribute_distribution')
+        if not os.path.isdir(plotdir):
+            os.makedirs(plotdir)
+            mm3.information("Making directory: {:s}".format(plotdir))
+        try:
+            filedict = params['plot_attribute_distribution_args']['plots']
+        except KeyError:
+            sys.exit("Missing options for plot_attribute_distribution!")
+
+        for filename in filedict.keys():
+            fileout = os.path.join(plotdir,filename)
+            argdict = {}
+            for mydict in [params['plot_attribute_distribution_args']['plots'][filename], params['plot_attribute_distribution_args']['general']]:
+                for key in mydict:
+                    argdict[key]=mydict[key]
+            plot_attribute_distribution(data, fileout=fileout, attrdict=attrdict, colors=colors, labels=labels, **argdict)
+# lineages
+
     ## attribute vs time plots
     if namespace.attribute_time:
         mm3.information ('Plotting attribute/time plots.')
@@ -361,20 +519,19 @@ if __name__ == "__main__":
             os.makedirs(plotdir)
             mm3.information("Making directory: {:s}".format(plotdir))
         try:
-            attrdict = params['plot_attribute_time_args']['attributes']
             filedict = params['plot_attribute_time_args']['plots']
-            colors = params['plot_attribute_time_args']['colors']
-            labels = params['plot_attribute_time_args']['labels']
             offsets = params['plot_attribute_time_args']['offsets']
         except KeyError:
-            sys.exit("Missing options for scatter plots!")
+            sys.exit("Missing options for plot_attribute_time!")
 
         for filename in filedict.keys():
-            print filename
             fileout = os.path.join(plotdir,filename)
-            plot_attribute_time(data, fileout=fileout, attrdict=attrdict, colors=colors, labels=labels, offsets=offsets, **params['plot_attribute_time_args']['plots'][filename])
+            argdict = {}
+            for mydict in [params['plot_attribute_time_args']['plots'][filename], params['plot_attribute_time_args']['general']]:
+                for key in mydict:
+                    argdict[key]=mydict[key]
+            plot_attribute_time(data, fileout=fileout, attrdict=attrdict, colors=colors, labels=labels, offsets=offsets, **argdict)
 # lineages
-    # exit
-    sys.exit()
 
-    ###END###
+    # exit
+
