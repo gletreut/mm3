@@ -1,0 +1,52 @@
+plot_attribute_time_args:
+  offsets:
+    - 0
+    - 302
+    - 664
+#    - 1026
+    - 1094
+  labels:
+    - "phase contrast only"
+    - "+ 488 ex"
+    - "+ 488 ex + 405 ex (100 ms)"
+#    - "+ 488 ex + 405 ex (200 ms) (problem)"
+    - "+ 488 ex + 405 ex (200 ms)"
+  colors:
+    - darkgreen
+    - darkblue
+    - darkorange
+  #    - magenta
+    - darkred
+  attributes:
+    sd:
+      label: "$S_d$ $[min]$"
+      scale: 1
+    times_min:
+      label: "time [h]"
+      scale: 0.017
+    growth_rate:
+      label: "$\\lambda$ $[h^{-1}]$"
+      scale: 60.
+  plots:
+    growthrate_vs_tb.pdf:
+      attr: growth_rate
+      lw: 0.5
+      ms: 1
+      scatter_max_pts: 1000
+      aratio: 4
+      bin_width: 0.5
+      units_dx: 1
+      units_dy: 0.1
+      units_dn: 100
+      xformat: '{x:.0f}'
+      tlo: 0.
+      ylims: [0., 1.2]
+#    sd_vs_times.pdf:
+#      attr: sd
+#      color: 'darkblue'
+#      lw: 0.5
+#      ms: 1
+#      scatter_max_pts: 1000
+#      bin_method: median
+#      xformat: '{x:.0f}'
+
