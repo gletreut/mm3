@@ -189,7 +189,7 @@ def plot_attribute_distribution(data, fileout, attrdict, attr, lw=0.5, ms=1, lab
 
     return
 
-def plot_attribute_time(data, fileout, attrdict, attr, time_mode='birth', scatter_max_pts=1000, lw=0.5, ms=2, xformat='{x:.2g}', yformat='{x:.2g}', offsets=None, labels=None, colors=None, bin_width=None, tlo=None, thi=None, aratio=4./3, units_dt=None, units_dy=None, units_dn=None, ylims=None):
+def plot_attribute_time(data, fileout, attrdict, attr, time_mode=None, scatter_max_pts=1000, lw=0.5, ms=2, xformat='{x:.2g}', yformat='{x:.2g}', offsets=None, labels=None, colors=None, bin_width=None, tlo=None, thi=None, aratio=4./3, units_dt=None, units_dy=None, units_dn=None, ylims=None):
     """
     Plot overlay of multiple datasets
     """
@@ -301,6 +301,8 @@ def plot_attribute_time(data, fileout, attrdict, attr, time_mode='birth', scatte
     # end loop datasets
 
     # time mode
+    if time_mode is None:
+        time_mode = "middle"
     if time_mode == 'birth':
         T_list = Tb_list
     elif time_mode == 'division':
