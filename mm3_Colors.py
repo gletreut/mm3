@@ -49,8 +49,6 @@ if __name__ == "__main__":
                                      description='Calculates total and average fluorescence per cell.')
     parser.add_argument('-f', '--paramfile', type=file,
                         required=True, help='Yaml file containing parameters.')
-    parser.add_argument('-o', '--fov', type=str,
-                        required=False, help='List of fields of view to analyze. Input "1", "1,2,3", etc. ')
     parser.add_argument('-c', '--cellfile', type=file,
                         required=False, help='Path to Cell object dicionary to analyze. Defaults to complete_cells.pkl.')
     namespace = parser.parse_args()
@@ -63,11 +61,6 @@ if __name__ == "__main__":
         mm3.warning('No param file specified. Using 100X template.')
         param_file_path = 'yaml_templates/params_SJ110_100X.yaml'
     p = mm3.init_mm3_helpers(param_file_path) # initialized the helper library
-
-    if namespace.fov:
-        user_spec_fovs = [int(val) for val in namespace.fov.split(",")]
-    else:
-        user_spec_fovs = []
 
     # load cell file
     mm3.information('Loading cell data.')
@@ -87,6 +80,14 @@ if __name__ == "__main__":
     except:
         mm3.warning('Could not load specs file.')
         raise ValueError
+
+    # fovs
+    fovs = None
+    if ('fovs' in p):
+        fovs = p['fovs']
+    if (fovs is None):
+        fovs = []
+    user_spec_fovs = [int(val) for val in fovs]
 
     # make list of FOVs to process (keys of channel_mask file)
     fov_id_list = sorted([fov_id for fov_id in specs.keys()])

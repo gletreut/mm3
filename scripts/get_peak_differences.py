@@ -68,6 +68,7 @@ if __name__ == "__main__":
 
         # make peak correspondence for new peaks
         for p in peaks_new:
+            spec_out[fov][p]=spec_in[fov][p]            # by default include it
             p_candidates = list(range(p-ttol,p))+list(range(p+1,p+ttol+1))
             for pc in p_candidates:
                 if pc in peaks_missing: # we found a match and stop
