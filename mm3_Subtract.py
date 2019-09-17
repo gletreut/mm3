@@ -52,7 +52,7 @@ if __name__ == "__main__":
                         required=True, help='Yaml file containing parameters.')
     parser.add_argument('-j', '--nproc',  type=int,
                         required=False, default=2, help='Number of processors to use.')
-    parser.add_argument('-c', '--color',  type=str,
+    parser.add_argument('-l', '--color',  type=str,
                         required=False, default=None, help='Channel to use')
     namespace = parser.parse_args()
 
