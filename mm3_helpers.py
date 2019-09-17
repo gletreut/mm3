@@ -219,6 +219,8 @@ def load_stack(fov_id, peak_id, color='c1'):
         img_filename = params['experiment_name'] + '_' + fmt_fov + '_' + fmt_peak + '_%s.tif'
         img_filename = img_filename % (fov_id, peak_id, color)
 
+        #information("Loading file {:s}".format(os.path.join(img_dir, img_filename)))
+
         with tiff.TiffFile(os.path.join(img_dir, img_filename)) as tif:
             img_stack = tif.asarray()
 
@@ -2310,15 +2312,18 @@ def find_mother_cells(Cells):
 
 ### functions for additional cell centric analysis
 
-def find_cell_intensities(fov_id, peak_id, Cells, midline=False):
+def find_cell_intensities(fov_id, peak_id, Cells, midline=False, color='c1'):
     '''
     Finds fluorescenct information for cells. All the cells in Cells
     should be from one fov/peak. See the function
     organize_cells_by_channel()
     '''
 
+    # default suffix is on the subtracted image
+    suf = 'sub_' + color
+
     # Load fluorescent images and segmented images for this channel
-    fl_stack = load_stack(fov_id, peak_id, color='sub_c2')
+    fl_stack = load_stack(fov_id, peak_id, color=suf)
     seg_stack = load_stack(fov_id, peak_id, color='seg')
 
     # determine absolute time index
@@ -2332,28 +2337,41 @@ def find_cell_intensities(fov_id, peak_id, Cells, midline=False):
     times_all = np.sort(times_all)
     times_all = np.array(times_all,np.int_)
     t0 = times_all[0] # first time index
+    ## note:
+    ## times are the frame numbers, starting from 1 (ie as in the file names).
+
+#    print("Times recorded in cells attributes")
+#    times_cells_all = np.unique(np.concatenate([cell.times for cell in Cells.values()]))
+#    print(times_cells_all)
+
+    # attributes that will be filled in
+    newattrs = ['fl_tots', 'fl_per_areas', 'fl_per_volumes']
+    if midline:
+        newattrs.append('fl_midlines')
 
     # Loop through cells
     for Cell in Cells.values():
-        # give this cell two lists to hold new information
-        Cell.fl_tots = [] # total fluorescence per time point
-        Cell.fl_area_avgs = [] # avg fluorescence per unit area by timepoint
-        Cell.fl_vol_avgs = [] # avg fluorescence per unit volume by timepoint
+        # create attribute dictionaries if not existing
+        for attr in newattrs:
+            if not hasattr(Cell, attr):
+                setattr(Cell, attr, {}) # empty dictionary
 
-        if midline:
-            Cell.mid_fl = [] # avg fluorescence of midline
+        attr_vals = {attr: [] for attr in newattrs}
 
         # and the time points that make up this cell's life
         for n, t in enumerate(Cell.times):
             # create fluorescent image only for this cell and timepoint.
             fl_image_masked = np.copy(fl_stack[t-t0])
-            fl_image_masked[seg_stack[t-t0] != Cell.labels[n]] = 0
+            #fl_image_masked[seg_stack[t-t0] != Cell.labels[n]] = 0 # leads to inefficient summation
+            idx = (seg_stack[t-t0] == Cell.labels[n])
 
-            # append total flourescent image
-            Cell.fl_tots.append(np.sum(fl_image_masked))
-            # and the average fluorescence
-            Cell.fl_area_avgs.append(np.sum(fl_image_masked) / Cell.areas[n])
-            Cell.fl_vol_avgs.append(np.sum(fl_image_masked) / Cell.volumes[n])
+            # compute attribute values at this time point
+            fl_tot = np.sum(fl_image_masked[idx])
+            fl_per_area = float(fl_tot) / float(Cell.areas[n])
+            fl_per_volume = float(fl_tot) / float(Cell.volumes[n])
+            attr_vals['fl_tots'].append(fl_tot)
+            attr_vals['fl_per_areas'].append(fl_per_area)
+            attr_vals['fl_per_volumes'].append(fl_per_volume)
 
             if midline:
                 # add the midline average by first applying morphology transform
@@ -2363,9 +2381,17 @@ def find_cell_intensities(fov_id, peak_id, Cells, midline=False):
                 # med_mask[med_dist < np.floor(cap_radius/2)] = 0
                 # print(img_fluo[med_mask])
                 if (np.shape(fl_image_masked[med_mask])[0] > 0):
-                    Cell.mid_fl.append(np.nanmean(fl_image_masked[med_mask]))
+                    fl_midline = np.nanmean(fl_image_masked[med_mask])
                 else:
-                    Cell.mid_fl.append(0)
+                    fl_midline = 0
+                attr_vals['fl_midlines'].append(fl_midline)
+        # end loop on times
+        for attr in newattrs:
+            aval = getattr(Cell, attr)  # it is a dictionary with keys being the channels
+            aval[color] = attr_vals[attr]   # value associated to a specific color is now a list of values
+            setattr(Cell, attr, aval)
+    # end of loop on cells
+
 
     # The cell objects in the original dictionary will be updated,
     # no need to return anything specifically.

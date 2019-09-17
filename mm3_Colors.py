@@ -51,6 +51,8 @@ if __name__ == "__main__":
                         required=True, help='Yaml file containing parameters.')
     parser.add_argument('-c', '--cellfile', type=file,
                         required=False, help='Path to Cell object dicionary to analyze. Defaults to complete_cells.pkl.')
+    parser.add_argument('-l', '--colors',  type=str, nargs='+',
+                        required=False, default=None, help='Color channels')
     namespace = parser.parse_args()
 
     # Load the project parameters file
@@ -61,6 +63,13 @@ if __name__ == "__main__":
         mm3.warning('No param file specified. Using 100X template.')
         param_file_path = 'yaml_templates/params_SJ110_100X.yaml'
     p = mm3.init_mm3_helpers(param_file_path) # initialized the helper library
+
+    # which color channel with which to do subtraction
+    colors = None
+    if namespace.colors:
+        colors = namespace.colors
+    if colors is None:
+        colors = ['c1']
 
     # load cell file
     mm3.information('Loading cell data.')
@@ -104,14 +113,25 @@ if __name__ == "__main__":
     # for each set of cells in one fov/peak, compute the fluorescence
     for fov_id in fov_id_list:
         if fov_id in Cells_by_peak:
-            mm3.information('Processing FOV {}.'.format(fov_id))
+            #mm3.information('Processing FOV {}.'.format(fov_id))
             for peak_id, Cells in Cells_by_peak[fov_id].items():
-                mm3.information('Processing peak {}.'.format(peak_id))
-                mm3.find_cell_intensities(fov_id, peak_id, Cells, midline=False)
+                mm3.information('Processing FOV {:d} / Peak {:d}.'.format(fov_id, peak_id))
+                for color in colors:
+                    mm3.find_cell_intensities(fov_id, peak_id, Cells, midline=False, color=color)
+                    mycell = Cells.values()[0]
+#                print(vars(mycell).keys())
+#                print("volumes", mycell.volumes)
+#                print("areas", mycell.areas)
+#                print("fl_tots", mycell.fl_tots)
+#                print("fl_per_volumes", mycell.fl_per_volumes)
+#                print("fl_per_areas", mycell.fl_per_areas)
 
     # Just the complete cells, those with mother and daugther
     cell_filename = os.path.basename(cell_file_path)
-    with open(os.path.join(p['cell_dir'], cell_filename[:-4] + '_fl.pkl'), 'wb') as cell_file:
+    cell_bfilename = os.path.splitext(cell_filename)[0]
+    #fileout = os.path.join(p['cell_dir'], cell_bfilename + '_fl.pkl')
+    fileout = cell_file_path
+    with open(fileout, 'wb') as cell_file:
         pickle.dump(Complete_Cells, cell_file, protocol=pickle.HIGHEST_PROTOCOL)
 
-    mm3.information('Finished.')
+    mm3.information('Finished and written in {}.'.format(fileout))

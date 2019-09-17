@@ -513,7 +513,7 @@ if __name__ == "__main__":
                 w = np.array(cell.widths, dtype=np.float_)*upp
                 w = np.nanmean(w) # average because otherwise too noisy
                 L = np.array(cell.lengths, dtype=np.float_)*upp
-                cell.volumes = np.pi/4. * w**2*L - np.pi/12. * w**3 # cylinder with hemispherical caps of length L and width w
+                cell.volume_um = np.pi/4. * w**2*L - np.pi/12. * w**3 # cylinder with hemispherical caps of length L and width w
                 cell.width_um = w
 
             # compute fluorescence per volume
