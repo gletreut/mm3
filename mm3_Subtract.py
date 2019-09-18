@@ -52,8 +52,8 @@ if __name__ == "__main__":
                         required=True, help='Yaml file containing parameters.')
     parser.add_argument('-j', '--nproc',  type=int,
                         required=False, default=2, help='Number of processors to use.')
-    parser.add_argument('-l', '--color',  type=str,
-                        required=False, default=None, help='Channel to use')
+    parser.add_argument('-l', '--colors',  type=str, nargs='+',
+                        required=False, default=None, help='Channels for which to perform the subtraction')
     namespace = parser.parse_args()
 
     # Load the project parameters file
@@ -69,12 +69,12 @@ if __name__ == "__main__":
     nproc = namespace.nproc
 
     # which color channel with which to do subtraction
-    if namespace.color:
-        sub_plane = namespace.color
+    if namespace.colors:
+        sub_planes = namespace.colors
     else:
-        sub_plane = p['phase_plane']
-    if sub_plane is None:
-        sub_plane = 'c1'
+        sub_planes = [p['phase_plane']]
+    if sub_planes is None:
+        sub_planes = ['c1']
 
     # Create folders for subtracted info if they don't exist
     if p['output'] == 'TIFF':
@@ -108,47 +108,49 @@ if __name__ == "__main__":
 
     mm3.information("Found %d FOVs to process." % len(fov_id_list))
 
-    # determine if we are doing fluorescence or phase subtraction, and set flags
-    if sub_plane == p['phase_plane']:
-        align = True # used when averaging empties
-        sub_method = 'phase' # used in subtract_fov_stack
-    else:
-        align = False
-        sub_method = 'fluor'
+    # LOOP OVER PLANE FOR WHICH TO DO THE SUBTRACTION
+    for sub_plane in sub_planes:
+        # determine if we are doing fluorescence or phase subtraction, and set flags
+        if sub_plane == p['phase_plane']:
+            align = True # used when averaging empties
+            sub_method = 'phase' # used in subtract_fov_stack
+        else:
+            align = False
+            sub_method = 'fluor'
 
-    ### Make average empty channels ###############################################################
-    if not p['subtract']['do_empties']:
-        mm3.information("Loading precalculated empties.")
-        pass # just skip this part and go to subtraction
+        ### Make average empty channels ###############################################################
+        if not p['subtract']['do_empties']:
+            mm3.information("Loading precalculated empties.")
+            pass # just skip this part and go to subtraction
 
-    else:
-        mm3.information("Calculating averaged empties for channel {}.".format(sub_plane))
+        else:
+            mm3.information("Calculating averaged empties for channel {}.".format(sub_plane))
 
-        need_empty = [] # list holds fov_ids of fov's that did not have empties
-        for fov_id in fov_id_list:
-            # send to function which will create empty stack for each fov.
-            averaging_result = mm3.average_empties_stack(fov_id, specs,
-                                                         color=sub_plane, align=align)
-            # add to list for FOVs that need to be given empties from other FOvs
-            if not averaging_result:
-                need_empty.append(fov_id)
+            need_empty = [] # list holds fov_ids of fov's that did not have empties
+            for fov_id in fov_id_list:
+                # send to function which will create empty stack for each fov.
+                averaging_result = mm3.average_empties_stack(fov_id, specs,
+                                                             color=sub_plane, align=align)
+                # add to list for FOVs that need to be given empties from other FOvs
+                if not averaging_result:
+                    need_empty.append(fov_id)
 
-        # deal with those problem FOVs without empties
-        have_empty = list(set(fov_id_list).difference(set(need_empty))) # fovs with empties
-        for fov_id in need_empty:
-            from_fov = min(have_empty, key=lambda x: abs(x-fov_id)) # find closest FOV with an empty
-            copy_result = mm3.copy_empty_stack(from_fov, fov_id, color=sub_plane)
+            # deal with those problem FOVs without empties
+            have_empty = list(set(fov_id_list).difference(set(need_empty))) # fovs with empties
+            for fov_id in need_empty:
+                from_fov = min(have_empty, key=lambda x: abs(x-fov_id)) # find closest FOV with an empty
+                copy_result = mm3.copy_empty_stack(from_fov, fov_id, color=sub_plane)
 
-    ### Subtract ##################################################################################
-    if p['subtract']['do_subtraction']:
-        mm3.information("Subtracting channels for channel {}.".format(sub_plane))
-        for fov_id in fov_id_list:
-            # send to function which will create empty stack for each fov.
-            subtraction_result = mm3.subtract_fov_stack(fov_id, specs,
-                                                        color=sub_plane, method=sub_method, nproc=nproc)
-        mm3.information("Finished subtraction.")
+        ### Subtract ##################################################################################
+        if p['subtract']['do_subtraction']:
+            mm3.information("Subtracting channels for channel {}.".format(sub_plane))
+            for fov_id in fov_id_list:
+                # send to function which will create empty stack for each fov.
+                subtraction_result = mm3.subtract_fov_stack(fov_id, specs,
+                                                            color=sub_plane, method=sub_method, nproc=nproc)
+            mm3.information("Finished subtraction.")
 
-    # Else just end, they only wanted to do empty averaging.
-    else:
-        mm3.information("Skipping subtraction.")
-        pass
+        # Else just end, they only wanted to do empty averaging.
+        else:
+            mm3.information("Skipping subtraction.")
+            pass
