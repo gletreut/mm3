@@ -51,7 +51,7 @@ if __name__ == "__main__":
                         required=True, help='Yaml file containing parameters.')
     parser.add_argument('-c', '--cellfile', type=file,
                         required=False, help='Path to Cell object dicionary to analyze. Defaults to complete_cells.pkl.')
-    parser.add_argument('-l', '--colors',  type=str, nargs='+',
+    parser.add_argument('-l', '--colors',  type=str, nargs='*',
                         required=False, default=None, help='Color channels')
     namespace = parser.parse_args()
 
@@ -69,7 +69,11 @@ if __name__ == "__main__":
     if namespace.colors:
         colors = namespace.colors
     if colors is None:
-        colors = ['c1']
+        colors = []
+
+    if (len(colors) == 0):
+        mm3.information("No color given. Exit")
+        sys.exit(0)
 
     # load cell file
     mm3.information('Loading cell data.')
