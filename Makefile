@@ -1,4 +1,4 @@
-EXPNAME :=  20190820_SJ1798_MOPSAcetate_arab02pc_405ex100ms_488ex200ms
+EXPNAME := SJ1798_MOPSgly17aa_arab02pc_003
 #TIFFS := ./TIFF/$(EXPNAME)*.tif
 PARAMPROCESSING := roles/params_processing.yaml
 ND2 := ../data/$(EXPNAME).nd2
@@ -10,8 +10,11 @@ FILTEREDCELLS := analysis/cell_data/all_cells_processed_complete_filtered_labels
 LINEAGESFILTEREDCELLS := analysis/cell_data/all_cells_lineages_selection_min3.pkl
 
 PARAMMOVIES := roles/params_movie.yaml
-MOVIES_FOVS := 1 4
+MOVIES_FOVS := 1 10
 MOVIES_CHANNELS := 0 1 2
+
+SUB_CHANNELS := c1 c2 c3
+COLOR_CHANNELS := c1 c2
 
 # variables
 TIFF := target_tiff
@@ -20,6 +23,7 @@ PICKING := target_picking
 PICKED := target_picked
 SUBTRACT := target_subtract
 SEGMENT := target_segment
+COLOR := target_color
 POSTPROCESS := target_postprocess
 PLOTS := target_plots
 MOVIES := target_movies
@@ -32,6 +36,10 @@ default: $(PICKING)
 ##############################################################################
 # IMAGE PROCESSING TARGETS
 ##############################################################################
+# mm3_Color.py
+$(COLOR): $(SEGMENT) $(PARAMPROCESSING)
+	python mm3/mm3_Colors.py -f $(PARAMPROCESSING) -l $(COLOR_CHANNELS) -c $(ALLCELLS)
+	touch $(COLOR)
 
 # mm3_Segment.py
 $(SEGMENT): $(SUBTRACT) $(PARAMPROCESSING)
@@ -40,7 +48,7 @@ $(SEGMENT): $(SUBTRACT) $(PARAMPROCESSING)
 
 # mm3_Subtract.py
 $(SUBTRACT): $(PICKED) $(PARAMPROCESSING)
-	python mm3/mm3_Subtract.py -f $(PARAMPROCESSING) -j $(NPROC)
+	python mm3/mm3_Subtract.py -f $(PARAMPROCESSING) -j $(NPROC) -l $(SUB_CHANNELS)
 	touch $(SUBTRACT)
 
 # mm3_ChannelPicker.py -- 2
@@ -101,6 +109,7 @@ dummy:
 	touch $(PICKED)
 	touch $(SUBTRACT)
 	touch $(SEGMENT)
+	touch $(COLOR)
 	touch $(POSTPROCESS)
 	touch $(PLOTS)
 	touch $(MOVIES)
