@@ -516,13 +516,45 @@ if __name__ == "__main__":
                 cell.volume_um = np.pi/4. * w**2*L - np.pi/12. * w**3 # cylinder with hemispherical caps of length L and width w
                 cell.width_um = w
 
-            # compute fluorescence per volume
+#            # compute fluorescence per volume
+#            for key in data:
+#                cell = data[key]
+#                try:
+#                    cell.fl_pervolume = np.array(cell.fl_tots, dtype=np.float_) / cell.volumes
+#                except AttributeError:
+#                    pass
+#
+            # compute fluorescence averages
+            attr_transform = { \
+                    'fl_per_areas': 'fl_per_area_avg', \
+                    'fl_per_volumes': 'fl_per_volume_avg'
+                    }
             for key in data:
                 cell = data[key]
-                try:
-                    cell.fl_pervolume = np.array(cell.fl_tots, dtype=np.float_) / cell.volumes
-                except AttributeError:
-                    pass
+                for attr in attr_transform.keys():
+                    attr_avg = attr_transform[attr]
+                    if hasattr(cell,attr):
+                        cdict = getattr(cell,attr)  # cdict is a dictionary {'c1':list1, 'c2':list2}...
+                        # average of intensity per volume
+                        for c in cdict.keys():
+                            values = cdict[c]
+                            value_avg = np.nanmean(values)
+                            clabel = params['fluorescence']['channel_labels'][c]
+                            setattr(cell,"{:s}_{:s}".format(attr_avg,clabel),value_avg)
+
+                    # QUEEN signal
+                    if ('queen' in params) and not (params['queen'] is None):
+                        attr = 'fl_tots'
+                        c1, c2 = params['queen']
+                        cdict = getattr(cell,attr)
+                        values_1 = cdict[c1]
+                        values_2 = cdict[c2]
+                        queens = np.array(values_1, dtype=np.float_)/np.array(values_2, dtype=np.float_)
+                        queen_avg = np.nanmean(queens)
+                        queen_med = np.nanmedian(queens)
+                        setattr(cell, 'queens', queens)
+                        setattr(cell, 'queen_avg', queen_avg)
+                        setattr(cell, 'queen_med', queen_med)
 
             # compute mid-time
             for key in data:
