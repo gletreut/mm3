@@ -22,6 +22,8 @@ import mm3_helpers as mm3
 plt.rcParams['axes.linewidth']=0.5
 dpi=300
 
+wv_list = [280, 403., 492.]
+
 ############################################################################
 ## FUNCTIONS
 ############################################################################
@@ -189,7 +191,7 @@ def plot_attribute_distribution(data, fileout, attrdict, attr, lw=0.5, ms=1, lab
 
     return
 
-def plot_attribute_time(data, fileout, attrdict, attr, time_mode=None, scatter_max_pts=1000, lw=0.5, ms=2, xformat='{x:.2g}', yformat='{x:.2g}', offsets=None, labels=None, colors=None, bin_width=None, tlo=None, thi=None, aratio=4./3, units_dt=None, units_dy=None, units_dn=None, ylims=None):
+def plot_attribute_time(data, fileout, attrdict, attr, time_mode=None, scatter_max_pts=1000, lw=0.5, ms=2, xformat='{x:.2g}', yformat='{x:.2g}', offsets=None, labels=None, colors=None, bin_width=None, tlo=None, thi=None, aratio=4./3, units_dt=None, units_dy=None, units_dn=None, ylims=None, translate_label=None):
     """
     Plot overlay of multiple datasets
     """
@@ -256,6 +258,14 @@ def plot_attribute_time(data, fileout, attrdict, attr, time_mode=None, scatter_m
             except (ValueError,AttributeError):
                 continue
         # end loop cells
+        ncells = len(Y)
+        if (ncells == 0):
+            Tb_list.append([])
+            Td_list.append([])
+            Tm_list.append([])
+            Y_list.append([])
+            print "dataset {:d} does not contain this attribute".format(n)
+            continue
 
         ## offsets
         offset = offsets[n]
@@ -308,7 +318,9 @@ def plot_attribute_time(data, fileout, attrdict, attr, time_mode=None, scatter_m
     elif time_mode == 'division':
         T_list = Td_list
     else:
+        time_mode = 'middle'
         T_list = Tm_list
+    print "{:<20s}{:<s}".format('time_mode', time_mode)
 
     # make the binning
     if tlo is None:
@@ -334,6 +346,9 @@ def plot_attribute_time(data, fileout, attrdict, attr, time_mode=None, scatter_m
     for n in range(ndata):
         X = T_list[n]
         Y = Y_list[n]
+        if (len(Y) == 0):
+            Ydata_binned_list.append([[]]* nbins)
+            continue
         Ydata_binned = get_binned(X,Y,edges)  # matrix where rows are bin index and columns y-values within
         Ydata_binned_list.append(Ydata_binned)
 
@@ -355,15 +370,20 @@ def plot_attribute_time(data, fileout, attrdict, attr, time_mode=None, scatter_m
     Ns = np.zeros(nbins, dtype=np.int_)
     haslabel=False
     for n in range(ndata):
+        print n
         ### general parameters
         label = labels[n]
         color = colors[n]
         if not label is None:
             haslabel=True
+            if translate_label:
+                label = label.translate(translate_label.upper())
 
         ### dataset
         T = T_list[n]
         Y = Y_list[n]
+        if (len(Y) == 0):
+            continue
         Ydata_binned = Ydata_binned_list[n]
         Ybinned_mean = np.array([np.nanmean(Ydata) for Ydata in Ydata_binned])
         Ybinned_median = np.array([np.nanmedian(Ydata) for Ydata in Ydata_binned])
