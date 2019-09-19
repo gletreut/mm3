@@ -52,7 +52,7 @@ def get_binned(X,Y,edges):
 
     return Y_binned
 
-def plot_attribute_distribution(data, fileout, attrdict, attr, lw=0.5, ms=1, labels=None, colors=None, bin_width=None, xlo=None, xhi=None, aratio=4./3, units_dx=None):
+def plot_attribute_distribution(data, fileout, attrdict, attr, lw=0.5, ms=1, labels=None, colors=None, bin_width=None, xlo=None, xhi=None, aratio=4./3, units_dx=None, xformat='{:<.2f}'):
     """
     Plot overlay of distributions from multiple datasets
     """
@@ -93,6 +93,11 @@ def plot_attribute_distribution(data, fileout, attrdict, attr, lw=0.5, ms=1, lab
             except (ValueError,AttributeError):
                 continue
         # end loop cells
+        ncell = len(X)
+        if ncell == 0:
+            # the attribute is not found in this data set
+            X_list.append([])
+            continue
 
         ## rescale
         try:
@@ -129,6 +134,9 @@ def plot_attribute_distribution(data, fileout, attrdict, attr, lw=0.5, ms=1, lab
     Xdata_binned_list = []
     for n in range(ndata):
         X = X_list[n]
+        if (len(X) == 0):
+            Xdata_binned_list.append([[]]*nbins)
+            continue
         Xdata_binned = get_binned(X,X,edges)  # matrix where rows are bin index and columns y-values within
         Xdata_binned_list.append(Xdata_binned)
 
@@ -142,27 +150,41 @@ def plot_attribute_distribution(data, fileout, attrdict, attr, lw=0.5, ms=1, lab
     ax=fig.gca()
 
     ## plot per dataset
-    haslabel=False
+    legend_label = "{:<s}\n{:<20s}{:<20s}{:<20s}"
     for n in range(ndata):
         ### general parameters
         label = labels[n]
         color = colors[n]
-        if not label is None:
-            haslabel=True
+        if label is None:
+            label=""
 
         ### dataset
+        X = X_list[n]
+        if len(X) == 0:
+            continue
+
         Xdata_binned = Xdata_binned_list[n]
         Nbinned = np.array([float(len(Xdata)) for Xdata in Xdata_binned])
         Ncells = np.sum(Nbinned)
         F = Nbinned / (Ncells*bin_width)
+
+        ### label
+        mu = np.nanmean(X)
+        std = np.nanstd(X)
+        cv = std/mu
+        med = np.nanmedian(X)
+        mean_label = ("mean = "+ xformat).format(mu)
+        median_label = ("med = "+ xformat).format(med)
+        CV_label = ("CV = {:.0f} %").format(cv*100)
+        title_label = label
+        label = legend_label.format(title_label, mean_label, CV_label, median_label)
 
         ### plot mean/median
         ax.plot(Xbinned, F, '-o', ms=ms, color=color, mew=lw, lw=lw, label=label)
         #ax.plot(Xbinned, F, '-o', ms=ms, color=color, mfc='none', mew=lw, lw=lw, label=label)
 
     ## legend
-    if haslabel:
-        ax.legend(loc='upper left', frameon=False, bbox_to_anchor=(1.0, 1.0), fontsize='x-small')
+    ax.legend(loc='upper left', frameon=False, bbox_to_anchor=(1.0, 1.0), fontsize='xx-small')
 
     ## axes adjustments
     ax.spines['right'].set_visible(False)
