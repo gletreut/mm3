@@ -9,6 +9,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import matplotlib.ticker
+import matplotlib.patches as mpatches
 from scipy.stats import iqr
 from scipy import signal
 from copy import copy
@@ -474,6 +475,289 @@ def plot_attribute_time(data, fileout, attrdict, attr, time_mode=None, scatter_m
 
     return
 
+def plot_queen_distribution(data, outputdir='.', attrdict={'fl_px_med_med_405ex':{},'fl_px_med_med_488ex':{}}, attrs=['fl_px_med_med_405ex','fl_px_med_med_488ex'], backgrounds=None, lw=0.5, ms=1, labels=None, colors=None, bin_widths=None, xlos=None, xhis=None, aratio=4./4, units_dx=None, xformat='{:<.2f}'):
+    """
+    Plot overlay of QUEEN signal distributions
+
+    """
+
+    # preliminary checks
+    ndata = len(data)
+    if ndata == 0:
+        sys.exit("Empty data sets!")
+
+    ## other checks
+    if labels is None:
+        labels = [None]*ndata
+
+    if len(labels) != ndata:
+        sys.exit("labels must have same length as data sets!")
+
+    if colors is None:
+        colors = [None]*ndata
+
+    if len(colors) != ndata:
+        sys.exit("colors must have same length as data sets!")
+
+    if bin_widths is None:
+        bin_widths = [[None]*ndata for i in range(3)]
+    elif np.isscalar(bin_widths):
+        bin_widths = [[bin_widths]*ndata for i in range(3)]
+    elif len(bin_widths) == 3:
+        bin_widths_old = bin_widths
+        bin_widths = []
+        for i in range(3):
+            bwidths = bin_widths_old[i]
+            if np.isscalar(bwidths):
+                bin_widths.append([bwidths]*ndata)
+            elif len(bwidths) == ndata:
+                bin_widths.append(bwidths)
+            else:
+                bin_widths.append([None]*ndata)
+
+    else:
+        raise ValueError()
+
+    if np.array(bin_widths).shape != (3,ndata):
+        raise ValueError("wrong shape for bin_widths!")
+
+    if xlos is None:
+        xlos = [None]*3
+
+    if xhis is None:
+        xhis = [None]*3
+
+    if units_dx is None:
+        units_dx = [None]*3
+
+    # check attrs
+    if len(attrs) != 2:
+        sys.exit("Input attributes must be of length 2!")
+    for attr in attrs:
+        if not (attr in attrdict):
+            sys.exit("Attr: {:s} not found in attrdict".format(attr))
+
+    # check backgrounds
+    if backgrounds is None:
+        backgrounds = [0.,0.]
+    if len(backgrounds) != 2:
+        backgrounds = [0.,0.]
+        #sys.exit("Input backgrounds must be of length 2!")
+
+    # build the vectors
+    X_list=[None for n in range(ndata)]   # lists of attribute values
+    Y_list=[None for n in range(ndata)]   # lists of attribute values
+    Q_list=[None for n in range(ndata)]   # lists of attribute values
+    for n in range(ndata):
+        X = []
+        Y = []
+        cells = data[n]
+        for key in cells.keys():
+            cell = cells[key]
+            try:
+                x = np.float_(getattr(cell,attrs[0]))
+                if np.isfinite(x):
+                    X.append(x)
+            except (ValueError,AttributeError):
+                pass
+            try:
+                y = np.float_(getattr(cell,attrs[1]))
+                if np.isfinite(y):
+                    Y.append(y)
+            except (ValueError,AttributeError):
+                pass
+
+        # end loop cells
+
+        ## update
+        X = np.array(X, dtype=np.float_)
+        Y = np.array(Y, dtype=np.float_)
+        X_list[n]=X
+        Y_list[n]=Y
+        if len(X) != 0 and len(X) == len(Y):
+            dx = X - backgrounds[0]
+            idx = dx > 0.
+            dy = Y - backgrounds[1]
+            idx = idx & (dy > 0.)
+            idx = ~idx
+            Q = dx/dy
+            Q[idx]=None
+            if not np.any(np.isfinite):
+                Q = []
+        else:
+            Q = []
+        Q_list[n]=Q
+    # end loop datasets
+    V_list = [X_list, Y_list, Q_list] # n,3 shape
+
+    ## make subsets
+    ### n-lists
+    Xdata_binned_list = []
+    Ydata_binned_list = []
+    Qdata_binned_list = []
+    ### nx3-matrix
+    Vbins = [ [None]*ndata for i in range(3)]   # 3,n shape
+    Vdata_binned_list = [ [None]*ndata for i in range(3)]   # 3,n shape
+    for i in range(3):
+        if i < 2:
+            attr=attrs[i]
+        else:
+            attr='queen'
+        print "attr {:s}".format(attr)
+
+        ### extremes
+        if xlos[i] is None:
+            xlos[i] = np.nanmin(np.concatenate(V_list[i]))
+        if xhis[i] is None:
+            xhis[i] = np.nanmax(np.concatenate(V_list[i]))
+
+        for n in range(ndata):
+            print "{:<2s}dataset {:d}".format("", n)
+            V = V_list[i][n]
+            if (len(V) == 0):
+                print "{:<2s}empty attribute list!".format("")
+                continue
+
+            ### build bins
+
+            bin_width = bin_widths[i][n]
+            if bin_width is None:
+                hist, bins = histogram(V)
+                bin_widths[i][n] = bin_width = np.min(np.diff(bins))
+
+            ### make the binning
+            xlo = xlos[i]
+            xhi = xhis[i]
+            xlo = int(xlo/bin_width)*bin_width
+            xhi = int(xhi/bin_width+0.5)*bin_width
+            nbins = int((xhi-xlo)/bin_width)        # x_i = x_0 (x_lo) + n \Delta
+            xhi = xlo + nbins*bin_width             # x_N = x_0 + N \Delta
+            edges = np.arange(nbins+1, dtype=np.float_)*bin_width + xlo
+            Vbins[i][n] = 0.5*(edges[:-1]+edges[1:])
+
+            print "{:<4s}bin_width = {:.1g}    nbins = {:d}    xlo = {:.1g}    xhi = {:.1g}".format("",bin_width, nbins, xlo, xhi)
+
+            ### build subsets list
+            Vdata_binned_list[i][n] = get_binned(V,V,edges)  # matrix where rows are bin index and columns y-values within
+
+    # make the plot
+    print "MAKING PLOT"
+    ## general plot parameters
+    mm3.information("aratio = {:.2f}".format(aratio))
+    ax_width = 4
+    ax_height = ax_width/aratio
+    figsize = (ax_width*3, ax_height)
+    fig = plt.figure(num='none', facecolor='w', figsize=figsize)
+    gs = gridspec.GridSpec(1,3)
+    axes =[]
+    for i in range(3):
+        ax = fig.add_subplot(gs[0,i])
+        axes.append(ax)
+
+    ## plot per dataset
+    legend_label = "{:<s}{:<20s}{:<20s}{:<20s}"
+    for i in range(3):
+        if i < 2:
+            attr=attrs[i]
+        else:
+            attr='queen'
+        print "attr {:d}: {:s}".format(i, attr)
+        ax = axes[i]
+        for n in range(ndata):
+            print "{:<2s}dataset {:d}".format("", n)
+            ### general parameters
+            label = labels[n]
+            color = colors[n]
+            if label is None:
+                label=""
+
+            ### dataset
+            V = V_list[i][n]
+            if len(V) == 0:
+                continue
+
+            Fbins = Vbins[i][n]
+            Vdata_binned = Vdata_binned_list[i][n]
+            Nbinned = np.array([float(len(Vdata)) for Vdata in Vdata_binned])
+            Ncells = np.sum(Nbinned)
+            bin_width = bin_widths[i][n]
+            F = Nbinned / (Ncells*bin_width)    # frequencies
+            print "{:<4s}sum(freqs) = {:.2f}".format("", np.sum(F)*bin_width)
+
+            ### label
+            mu = np.nanmean(V)
+            std = np.nanstd(V)
+            cv = std/mu
+            med = np.nanmedian(V)
+            mean_label = ("mean = "+ xformat).format(mu)
+            median_label = ("med = "+ xformat).format(med)
+            CV_label = ("CV = {:.0f} %").format(cv*100)
+#            if (i == 0):
+#                title_label = label + "\n"
+#            else:
+#                title_label = ""
+            label = legend_label.format("", mean_label, CV_label, median_label)
+
+            ### plot mean/median
+            ax.plot(Fbins, F, '-o', ms=ms, color=color, mew=lw, lw=lw, label=label)
+            #ax.plot(Xbinned, F, '-o', ms=ms, color=color, mfc='none', mew=lw, lw=lw, label=label)
+
+        ### plot backgrounds
+        if i < 2:
+            bg = backgrounds[i]
+            ax.axvline(x=bg, linestyle='--', lw=lw, color='k', label="bg = " + xformat.format(bg))
+
+        ## axes adjustments
+        ax.spines['right'].set_visible(False)
+        ax.spines['top'].set_visible(False)
+        ax.spines['left'].set_visible(False)
+        ax.spines['left'].set_smart_bounds(True)
+        ax.spines['bottom'].set_smart_bounds(True)
+        ax.tick_params(axis='both', labelsize='medium', length=4, left=False, labelleft=False)
+
+        if not (units_dx[i] is None):
+            ax.xaxis.set_major_locator(matplotlib.ticker.MultipleLocator(base=units_dx[i]))
+
+        ax.set_xlim(xlos[i], xhis[i])
+        ax.set_ylim(0., None)
+
+        try:
+            ax.set_xlabel(attrdict[attr]['label'], fontsize='medium')
+        except KeyError:
+            ax.set_xlabel(attr, fontsize='medium')
+
+        ## legend
+        ax.legend(loc='upper center', frameon=False, bbox_to_anchor=(0.5, -0.3), fontsize='xx-small', borderaxespad=0, borderpad=0)
+        #ax.legend(loc='best', frameon=False, fontsize='xx-small')
+
+
+    # legend
+    patches=[]
+    for n in range(ndata):
+        label=labels[n]
+        color=colors[n]
+        if label is None:
+            label = "{:d}".format(n)
+
+        patch = mpatches.Patch(color=color, label=label)
+        patches.append(patch)
+    #axes[2].add_artist(plt.legend(handles=patches, loc='upper right'))
+    plt.figlegend(handles=patches, fontsize='xx-small', mode='expand', ncol=ndata,borderaxespad=0, borderpad=0, loc='lower center', frameon=False)
+
+
+
+    ## last configurations
+    rect = [0.,0.,1.,1.]
+    gs.tight_layout(fig, rect=rect, w_pad=0.0, h_pad=0.0)
+    filename = "queen_distributions"
+    for ext in ['.png', '.pdf']:
+        fileout = os.path.join(outputdir, filename + ext)
+        fig.savefig(fileout, bbox_inches='tight', pad_inches=0, dpi=dpi)
+        mm3.information("{:<20s}{:<s}".format('fileout',fileout))
+    plt.close('all')
+
+    return
+
 ############################################################################
 ## MAIN
 ############################################################################
@@ -488,7 +772,7 @@ if __name__ == "__main__":
     parser.add_argument('--show_attributes',  action='store_true', help='Show the attributes of the first cell of each dat set.')
     parser.add_argument('--attribute_time',  action='store_true', help='Plot the scatter plots specified in the Yaml file.')
     parser.add_argument('--attribute_distribution',  action='store_true', help='Plot the distributions of the attributes specified in the Yaml file.')
-#    parser.add_argument('-l', '--lineagesfile',  type=file, help='Pickle file containing the list of lineages.')
+    parser.add_argument('--queen_distribution',  action='store_true', help='Queen analysis specific. Plot the distributions.')
 
     # load arguments
     namespace = parser.parse_args(sys.argv[1:])
@@ -553,7 +837,6 @@ if __name__ == "__main__":
                 for key in mydict:
                     argdict[key]=mydict[key]
             plot_attribute_distribution(data, fileout=fileout, attrdict=attrdict, colors=colors, labels=labels, **argdict)
-# lineages
 
     ## attribute vs time plots
     if namespace.attribute_time:
@@ -575,6 +858,18 @@ if __name__ == "__main__":
                 for key in mydict:
                     argdict[key]=mydict[key]
             plot_attribute_time(data, fileout=fileout, attrdict=attrdict, colors=colors, labels=labels, offsets=offsets, **argdict)
+
+    ## QUEEN analysis distributions
+    if namespace.queen_distribution:
+        mm3.information ('Plotting QUEEN analysis distributions.')
+        plotdir = os.path.join(outputdir,'queen_analysis')
+        if not os.path.isdir(plotdir):
+            os.makedirs(plotdir)
+            mm3.information("Making directory: {:s}".format(plotdir))
+
+        argdict=params['plot_queen_distribution_args']
+
+        plot_queen_distribution(data, outputdir=plotdir, attrdict=attrdict, colors=colors, labels=labels, **argdict)
 # lineages
 
     # exit
