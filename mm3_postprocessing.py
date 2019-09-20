@@ -526,6 +526,10 @@ if __name__ == "__main__":
 #
             # compute fluorescence averages
             attr_transform = { \
+                    'fl_px_avgs': 'fl_px_avg_avg', \
+                    'fl_px_stds': 'fl_px_std_avg', \
+                    'fl_px_meds': 'fl_px_med_med', \
+                    'fl_px_iqrs': 'fl_px_iqr_med', \
                     'fl_per_areas': 'fl_per_area_avg', \
                     'fl_per_volumes': 'fl_per_volume_avg'
                     }
@@ -533,29 +537,36 @@ if __name__ == "__main__":
                 cell = data[key]
                 for attr in attr_transform.keys():
                     attr_avg = attr_transform[attr]
+                    mode = attr_avg[-3:]    # mode is med or avg
                     if hasattr(cell,attr):
                         cdict = getattr(cell,attr)  # cdict is a dictionary {'c1':list1, 'c2':list2}...
+
                         # average of intensity per volume
                         for c in cdict.keys():
                             values = cdict[c]
-                            value_avg = np.nanmean(values)
+                            if mode == 'avg':
+                                value_avg = np.nanmean(values)
+                            elif mode == 'med':
+                                value_avg = np.nanmedian(values)
+                            else:
+                                raise ValueError("Unsupported mode!")
                             clabel = params['fluorescence']['channel_labels'][c]
                             setattr(cell,"{:s}_{:s}".format(attr_avg,clabel),value_avg)
 
-                    # QUEEN signal
-                    if ('queen' in params) and not (params['queen'] is None):
-                        attr = 'fl_tots'
-                        c1, c2 = params['queen']
-                        cdict = getattr(cell,attr)
-                        values_1 = cdict[c1]
-                        values_2 = cdict[c2]
-                        queens = np.array(values_1, dtype=np.float_)/np.array(values_2, dtype=np.float_)
-                        queen_avg = np.nanmean(queens)
-                        queen_med = np.nanmedian(queens)
-                        setattr(cell, 'queens', queens)
-                        setattr(cell, 'queen_avg', queen_avg)
-                        setattr(cell, 'queen_med', queen_med)
-
+#                    # QUEEN signal
+#                    if ('queen' in params) and not (params['queen'] is None):
+#                        attr = 'fl_tots'
+#                        c1, c2 = params['queen']
+#                        cdict = getattr(cell,attr)
+#                        values_1 = cdict[c1]
+#                        values_2 = cdict[c2]
+#                        queens = np.array(values_1, dtype=np.float_)/np.array(values_2, dtype=np.float_)
+#                        queen_avg = np.nanmean(queens)
+#                        queen_med = np.nanmedian(queens)
+#                        setattr(cell, 'queens', queens)
+#                        setattr(cell, 'queen_avg', queen_avg)
+#                        setattr(cell, 'queen_med', queen_med)
+#
             # compute mid-time
             for key in data:
                 cell = data[key]

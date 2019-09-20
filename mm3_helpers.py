@@ -26,6 +26,7 @@ from scipy.signal import find_peaks_cwt # used in channel finding
 from scipy.optimize import curve_fit # fitting ring profile
 from scipy.optimize import leastsq # fitting 2d gaussian
 from scipy import ndimage as ndi # labeling and distance transform
+from scipy.stats import iqr # used for attributes of fluorescence
 from skimage import segmentation # used in make_masks and segmentation
 from skimage.transform import rotate
 from skimage.feature import match_template # used to align images
@@ -2345,7 +2346,7 @@ def find_cell_intensities(fov_id, peak_id, Cells, midline=False, color='c1'):
 #    print(times_cells_all)
 
     # attributes that will be filled in
-    newattrs = ['fl_tots', 'fl_per_areas', 'fl_per_volumes']
+    newattrs = ['fl_tots', 'fl_px_avgs', 'fl_px_stds', 'fl_px_meds', 'fl_px_iqrs', 'fl_per_areas', 'fl_per_volumes']
     if midline:
         newattrs.append('fl_midlines')
 
@@ -2367,9 +2368,17 @@ def find_cell_intensities(fov_id, peak_id, Cells, midline=False, color='c1'):
 
             # compute attribute values at this time point
             fl_tot = np.sum(fl_image_masked[idx])
+            fl_px_avg = np.nanmean(fl_image_masked[idx])
+            fl_px_std = np.nanstd(fl_image_masked[idx])
+            fl_px_med = np.nanmedian(fl_image_masked[idx])
+            fl_px_iqr= iqr(fl_image_masked[idx])
             fl_per_area = float(fl_tot) / float(Cell.areas[n])
             fl_per_volume = float(fl_tot) / float(Cell.volumes[n])
             attr_vals['fl_tots'].append(fl_tot)
+            attr_vals['fl_px_avgs'].append(fl_px_avg)
+            attr_vals['fl_px_stds'].append(fl_px_std)
+            attr_vals['fl_px_meds'].append(fl_px_med)
+            attr_vals['fl_px_iqrs'].append(fl_px_iqr)
             attr_vals['fl_per_areas'].append(fl_per_area)
             attr_vals['fl_per_volumes'].append(fl_per_volume)
 
