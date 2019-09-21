@@ -250,6 +250,7 @@ def plot_attribute_time(data, fileout, attrdict, attr, time_mode=None, scatter_m
     ## attributes for birth and division times
     #attr_times = "times"   # frames
     attr_times = "times_min"
+    #attr_times = "abs_time"
 
     # build the vectors to plot
     Tb_list=[]   # lists of times
@@ -744,12 +745,361 @@ def plot_queen_distribution(data, outputdir='.', attrdict={'fl_px_med_med_405ex'
     #axes[2].add_artist(plt.legend(handles=patches, loc='upper right'))
     plt.figlegend(handles=patches, fontsize='xx-small', mode='expand', ncol=ndata,borderaxespad=0, borderpad=0, loc='lower center', frameon=False)
 
-
-
     ## last configurations
     rect = [0.,0.,1.,1.]
     gs.tight_layout(fig, rect=rect, w_pad=0.0, h_pad=0.0)
     filename = "queen_distributions"
+    for ext in ['.png', '.pdf']:
+        fileout = os.path.join(outputdir, filename + ext)
+        fig.savefig(fileout, bbox_inches='tight', pad_inches=0, dpi=dpi)
+        mm3.information("{:<20s}{:<s}".format('fileout',fileout))
+    plt.close('all')
+
+    return
+
+def plot_queen_time(data, offsets=None, outputdir='.', attrdict={'fl_px_med_med_405ex':{},'fl_px_med_med_488ex':{}}, attrs=['fl_px_med_med_405ex','fl_px_med_med_488ex'], backgrounds=None, time_mode=None, scatter_max_pts=1000, lw=0.5, ms=1, labels=None, colors=None, bin_width=None, xlos=None, xhis=None, tlo=None, thi=None, aratio=4./3, units_dx=None, unit_dt=None, unit_dn=None, xformat='{:<.2f}', tformat='{:<.2f}', xlims=None):
+    """
+    Plot overlay of QUEEN signal time traces
+
+    """
+
+    # preliminary checks
+    ndata = len(data)
+    if ndata == 0:
+        sys.exit("Empty data sets!")
+
+    ## other checks
+    if offsets is None:
+        offsets = [None]*ndata
+
+    if len(offsets) != ndata:
+        sys.exit("offsets must have same length as data sets!")
+
+    if labels is None:
+        labels = [None]*ndata
+
+    if len(labels) != ndata:
+        sys.exit("labels must have same length as data sets!")
+
+    if colors is None:
+        colors = [None]*ndata
+
+    if len(colors) != ndata:
+        sys.exit("colors must have same length as data sets!")
+
+    if xlos is None:
+        xlos = [None]*3
+
+    if xhis is None:
+        xhis = [None]*3
+
+    if units_dx is None:
+        units_dx = [None]*3
+
+    if xlims is None:
+        xlims = [[None,None]]*3
+
+    # check attrs
+    if len(attrs) != 2:
+        sys.exit("Input attributes must be of length 2!")
+    for attr in attrs:
+        if not (attr in attrdict):
+            sys.exit("Attr: {:s} not found in attrdict".format(attr))
+
+    # check backgrounds
+    if backgrounds is None:
+        backgrounds = [0.,0.]
+    if len(backgrounds) != 2:
+        backgrounds = [0.,0.]
+        #sys.exit("Input backgrounds must be of length 2!")
+
+    #attr_times = "abs_times"
+    attr_times = "times_min"
+
+    # build the vectors
+    T_list=[[None for n in range(ndata)] for i in range(3)]
+    V_list=[[None for n in range(ndata)] for i in range(3)]
+
+    tmin_old,tmax_old, dt_old = None, None, None
+    Tbis_list = [None for n in range(ndata)]
+    for n in range(ndata):
+        Tbis = []
+        T = [[] for i in range(3)] # prepare 3 copies of time values in case attributes can be null sometimes
+        V = [[] for i in range(3)] # 3 attributes
+        dt = 9.99e99
+        cells = data[n]
+        for key in cells.keys():
+            cell = cells[key]
+            try:
+                times = np.array(getattr(cell,attr_times), dtype=np.float_)
+                tb = times[0]
+                td = times[-1]
+                if 'time_mode' == 'birth':
+                    t = tb
+                elif 'time_mode' == 'division':
+                    t = td
+                else:
+                    t = 0.5*(tb+td)
+                Tbis.append(t)
+                u = np.min(np.diff(times))
+                if u < dt and u > 0.:
+                    dt = u
+            except (ValueError,AttributeError):
+                print "cell {:s}: cannot find time attribute {:s}".format(getattr(cell,'id'),attr_times)
+                continue    # if problem with times, then skip this cell
+            try:
+                x = np.float_(getattr(cell,attrs[0]))
+                if np.isfinite(x):
+                    T[0].append(t)
+                    V[0].append(x)
+            except (ValueError,AttributeError):
+                pass
+            try:
+                y = np.float_(getattr(cell,attrs[1]))
+                if np.isfinite(y):
+                    T[1].append(t)
+                    V[1].append(y)
+            except (ValueError,AttributeError):
+                pass
+        # end loop cells
+        ## offsets
+        offset = offsets[n]
+        if offset is None:
+            try:
+                offset = tmax_old + dt_old  # just an estimate because in reality should be the last time acquisition
+                                            # including cells that have been filtered out
+            except TypeError:
+                offset = 0
+
+        Tbis = np.array(Tbis) + offset
+        Tbis_list[n] = Tbis
+        tmin, tmax = np.nanmin(Tbis), np.nanmax(Tbis)
+        tmin_old = tmin
+        tmax_old = tmax
+        dt_old = dt
+        print "dataset {:d}    tmin = {:.1f}    tmax = {:.1f}    dt = {:.1f}    offset = {:.1f}".format(n, tmin, tmax, dt, offset)
+
+
+        ## update
+        for i in range(2):
+            T[i] = np.array(T[i], dtype=np.float_) + offset
+            V[i] = np.array(V[i], dtype=np.float_)
+
+        if np.all(T[0] == T[1]):
+            dx = V[0] - backgrounds[0]
+            idx = dx > 0.
+            dy = V[1] - backgrounds[1]
+            idx = idx & (dy > 0.)
+            TQ = np.copy(T[0])[idx]
+            Q = dx[idx]/dy[idx]
+        else:
+            Q = np.array([])
+            TQ = np.array([])
+        T[2] = TQ
+        V[2] = Q
+
+        for i in range(3):
+            T_list[i][n]=T[i]
+            V_list[i][n]=V[i]
+
+    # end loop datasets
+
+    # rescaling
+    try:
+        scale = attrdict[attr_times]['scale']
+    except (KeyError):
+        scale = None
+    if not scale is None:
+        Tbis_list = [T*scale for T in Tbis_list]
+
+    for i in range(3):
+        if i < 2:
+            attr=attrs[i]
+        else:
+            attr='queen'
+        print "rescaling attr {:s}".format(attr)
+
+
+        ### maybe rescale
+        try:
+            scale = attrdict[attr_times]['scale']
+        except (KeyError):
+            scale = None
+        if not scale is None:
+            T_list[i] = [T*scale for T in T_list[i]]
+
+        try:
+            scale = attrdict[attr]['scale']
+        except (KeyError):
+            scale = None
+        if not scale is None:
+            V_list[i] = [V*scale for V in V_list[i]]
+
+    ### extremes
+    Tall = np.concatenate([np.concatenate(T_list[i]) for i in range(3)])
+    if tlo is None:
+        tlo = np.nanmin(Tall)
+    if thi is None:
+        thi = np.nanmax(Tall)
+
+    if bin_width is None:
+        hist, bins = histogram(Tall)
+        bin_width = np.min(np.diff(bins))
+
+    ### make the binning
+    tlo = int(tlo/bin_width)*bin_width
+    thi = int(thi/bin_width+0.5)*bin_width
+    nbins = int((thi-tlo)/bin_width)        # x_i = x_0 (x_lo) + n \Delta
+    thi = tlo + nbins*bin_width             # x_N = x_0 + N \Delta
+    edges = np.arange(nbins+1, dtype=np.float_)*bin_width + tlo
+    Tbins = 0.5*(edges[:-1]+edges[1:])
+    print "bin_width = {:.1g}    nbins = {:d}    tlo = {:.1g}    thi = {:.1g}".format(bin_width, nbins, tlo, thi)
+
+
+    ## make subsets
+    Vdata_binned_list = [ [None]*ndata for i in range(3)]   # 3,n shape
+    for i in range(3):
+        if i < 2:
+            attr=attrs[i]
+        else:
+            attr='queen'
+        print "build subsets attr {:s}".format(attr)
+
+        for n in range(ndata):
+            print "{:<2s}dataset {:d}".format("", n)
+            T = T_list[i][n]
+            V = V_list[i][n]
+            if (len(T) == 0):
+                print "{:<2s}empty attribute list!".format("")
+                continue
+
+            ### build subsets list
+            Vdata_binned_list[i][n] = get_binned(T,V,edges)  # matrix where rows are bin index and columns y-values within
+
+    Tbis_all = np.concatenate(Tbis_list)
+    print Tbis_all
+    Tbis_binned = get_binned(Tbis_all, Tbis_all, edges)
+    Ns = np.array([float(len(Tbis_set)) for Tbis_set in Tbis_binned])
+
+    # make the plot
+    print "MAKING PLOT"
+    ## general plot parameters
+    mm3.information("aratio = {:.2f}".format(aratio))
+    ax_height = 3
+    ax_width = ax_height*aratio
+    figsize = (ax_width, ax_height*4)
+    fig = plt.figure(num='none', facecolor='w', figsize=figsize)
+    nrows=7
+    gs = gridspec.GridSpec(nrows,1)
+    axes =[]
+    ax = fig.add_subplot(gs[0:2,0])
+    axes.append(ax)
+    for i in range(1,4):
+        ax = fig.add_subplot(gs[2*i:min(2*(i+1),nrows),0], sharex=axes[0])
+        axes.append(ax)
+
+    ## plot per dataset
+    for i in range(3):
+        if i < 2:
+            attr=attrs[i]
+        else:
+            attr='queen'
+        print "plotting attr {:d}: {:s}".format(i, attr)
+        ax = axes[i]
+        for n in range(ndata):
+            print "{:<2s}dataset {:d}".format("", n)
+            ### general parameters
+            #label = labels[n]
+            color = colors[n]
+
+            ### dataset
+            T = T_list[i][n]
+            V = V_list[i][n]
+            if (len(T) == 0):
+                print "{:<4s}empty attribute list!".format("")
+                continue
+
+            Vdata_binned = Vdata_binned_list[i][n]
+            Vbinned_mean = np.array([np.nanmean(Vdata) for Vdata in Vdata_binned])
+            Vbinned_median = np.array([np.nanmedian(Vdata) for Vdata in Vdata_binned])
+            Vbinned_std = np.array([np.nanstd(Vdata) for Vdata in Vdata_binned])
+            Nbinned = np.array([float(len(Vdata)) for Vdata in Vdata_binned])
+            idx = np.isfinite(Vbinned_std) & (Nbinned > 0)
+            Vbinned_err = np.copy(Vbinned_std)
+            Vbinned_err[idx] = Vbinned_err[idx] / np.sqrt(Nbinned[idx])
+            Vbinned_err[~idx] = None
+
+            ### plot all cells
+            ax.plot(T,V,'o', ms=ms, mfc=color, mec='none', alpha=0.7)
+
+            ### plot mean/median
+            ax.plot(Tbins, Vbinned_median, 's', ms=4*ms, mfc='none', mec=color)
+            ax.errorbar(Tbins, Vbinned_mean, yerr=Vbinned_err, linestyle='-', marker='o', ms=4*ms, c=color, ecolor=color, elinewidth=lw, lw=lw)
+
+            ### plot backgrounds
+            if i < 2:
+                bg = backgrounds[i]
+                ax.axhline(y=bg, linestyle='--', lw=lw, color='k', label="bg = " + xformat.format(bg))
+        # end loop on data set
+
+        if not (units_dx[i] is None):
+            ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(base=units_dx[i]))
+
+        ax.set_ylim(xlos[i], xhis[i])
+
+        try:
+            ax.set_ylabel(attrdict[attr]['label'], fontsize='medium')
+        except KeyError:
+            ax.set_ylabel(attr, fontsize='medium')
+
+        ## axes adjustments
+        ax.spines['right'].set_visible(False)
+        ax.spines['top'].set_visible(False)
+        ax.spines['bottom'].set_visible(False)
+        ax.spines['left'].set_smart_bounds(True)
+        ax.spines['bottom'].set_smart_bounds(True)
+        ax.tick_params(axis='both', labelsize='medium', length=4, bottom=False, labelbottom=False)
+    # end loop on axes
+
+    # cell count axes
+    ax=axes[-1]
+    ax.bar(edges[:-1], Ns, bin_width, color='lightgray', edgecolor='k', align='edge')
+    if not (unit_dt is None):
+        ax.xaxis.set_major_locator(matplotlib.ticker.MultipleLocator(base=unit_dt))
+
+    if not (unit_dn is None):
+        ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(base=unit_dn))
+
+    ax.spines['right'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+    ax.spines['left'].set_smart_bounds(True)
+    #ax.spines['bottom'].set_smart_bounds(True)
+    ax.tick_params(axis='both', labelsize='medium', length=4)
+
+    ax.set_xlim(tlo, thi)
+    ax.set_ylim(0., None)
+
+    ax.set_ylabel("# cells", fontsize='medium')
+    ax.set_xlabel(attrdict[attr_times]['label'], fontsize='medium')
+
+
+    # legend
+    patches=[]
+    for n in range(ndata):
+        label=labels[n]
+        color=colors[n]
+        if label is None:
+            label = "{:d}".format(n)
+
+        patch = mpatches.Patch(color=color, label=label)
+        patches.append(patch)
+    #axes[2].add_artist(plt.legend(handles=patches, loc='upper right'))
+    plt.figlegend(handles=patches, fontsize='x-small', mode='expand', ncol=ndata,borderaxespad=0, borderpad=0, loc='lower center', frameon=False)
+
+    ## last configurations
+    rect = [0.,0.,1.,1.]
+    gs.tight_layout(fig, rect=rect, w_pad=0.0, h_pad=0.0)
+    filename = "queen_time"
     for ext in ['.png', '.pdf']:
         fileout = os.path.join(outputdir, filename + ext)
         fig.savefig(fileout, bbox_inches='tight', pad_inches=0, dpi=dpi)
@@ -770,8 +1120,9 @@ if __name__ == "__main__":
 #    parser.add_argument('--crosscorrelations',  action='store_true', help='Plot the cross-correlation of cell variables.')
 #    parser.add_argument('--autocorrelations',  action='store_true', help='Plot the autocorrelation of cell variables.')
     parser.add_argument('--show_attributes',  action='store_true', help='Show the attributes of the first cell of each dat set.')
-    parser.add_argument('--attribute_time',  action='store_true', help='Plot the scatter plots specified in the Yaml file.')
+    parser.add_argument('--attribute_time',  action='store_true', help='Plot the time-binned values.')
     parser.add_argument('--attribute_distribution',  action='store_true', help='Plot the distributions of the attributes specified in the Yaml file.')
+    parser.add_argument('--queen_time',  action='store_true', help='Queen analysis specific. Plot the time-binned values.')
     parser.add_argument('--queen_distribution',  action='store_true', help='Queen analysis specific. Plot the distributions.')
 
     # load arguments
@@ -870,7 +1221,17 @@ if __name__ == "__main__":
         argdict=params['plot_queen_distribution_args']
 
         plot_queen_distribution(data, outputdir=plotdir, attrdict=attrdict, colors=colors, labels=labels, **argdict)
-# lineages
 
+    ## QUEEN analysis time-binned values
+    if namespace.queen_time:
+        mm3.information ('Plotting QUEEN analysis time plots.')
+        plotdir = os.path.join(outputdir,'queen_analysis')
+        if not os.path.isdir(plotdir):
+            os.makedirs(plotdir)
+            mm3.information("Making directory: {:s}".format(plotdir))
+
+        argdict=params['plot_queen_time_args']
+
+        plot_queen_time(data, outputdir=plotdir, attrdict=attrdict, colors=colors, labels=labels, **argdict)
     # exit
 
