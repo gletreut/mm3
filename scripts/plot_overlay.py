@@ -747,7 +747,7 @@ def plot_queen_distribution(data, outputdir='.', attrdict={'fl_px_med_med_405ex'
 
     ## last configurations
     rect = [0.,0.,1.,1.]
-    gs.tight_layout(fig, rect=rect, w_pad=0.0, h_pad=0.0)
+    gs.tight_layout(fig, rect=rect, w_pad=0.2, h_pad=0.0)
     filename = "queen_distributions"
     for ext in ['.png', '.pdf']:
         fileout = os.path.join(outputdir, filename + ext)
