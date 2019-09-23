@@ -580,9 +580,8 @@ def plot_queen_distribution(data, outputdir='.', attrdict={'fl_px_med_med_405ex'
             idx = dx > 0.
             dy = Y - backgrounds[1]
             idx = idx & (dy > 0.)
-            idx = ~idx
-            Q = dx/dy
-            Q[idx]=None
+            #idx = ~idx
+            Q = dx[idx]/dy[idx]
             if not np.any(np.isfinite):
                 Q = []
         else:
