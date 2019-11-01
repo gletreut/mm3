@@ -151,7 +151,7 @@ if __name__ == "__main__":
             # loop through time points
 
             if len(user_spec_fovs) == 0:    # analyze all FOVs
-                user_spec_fovs=range(nm)
+                user_spec_fovs=range(1,nm+1)
 
             for t in extraction_range:
                 # timepoint output name (1 indexed rather than 0 indexed)
