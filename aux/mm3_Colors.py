@@ -52,10 +52,10 @@ if __name__ == "__main__":
                                      description='Calculates total and average fluorescence per cell.')
     parser.add_argument('-f', '--paramfile', type=file,
                         required=True, help='Yaml file containing parameters.')
-    parser.add_argument('-o', '--fov', type=str,
-                        required=False, help='List of fields of view to analyze. Input "1", "1,2,3", etc. ')
     parser.add_argument('-c', '--cellfile', type=file,
                         required=False, help='Path to Cell object dicionary to analyze. Defaults to complete_cells.pkl.')
+    parser.add_argument('-l', '--colors',  type=str, nargs='*',
+                        required=False, default=None, help='Color channels')
     namespace = parser.parse_args()
 
     # Load the project parameters file
@@ -67,10 +67,16 @@ if __name__ == "__main__":
         param_file_path = 'yaml_templates/params_SJ110_100X.yaml'
     p = mm3.init_mm3_helpers(param_file_path) # initialized the helper library
 
-    if namespace.fov:
-        user_spec_fovs = [int(val) for val in namespace.fov.split(",")]
-    else:
-        user_spec_fovs = []
+    # which color channel with which to do subtraction
+    colors = None
+    if namespace.colors:
+        colors = namespace.colors
+    if colors is None:
+        colors = []
+
+    if (len(colors) == 0):
+        mm3.information("No color given. Exit")
+        sys.exit(0)
 
     # load cell file
     mm3.information('Loading cell data.')
@@ -89,6 +95,14 @@ if __name__ == "__main__":
     # load time table. Puts in params dictionary
     mm3.load_time_table()
 
+    # fovs
+    fovs = None
+    if ('fovs' in p):
+        fovs = p['fovs']
+    if (fovs is None):
+        fovs = []
+    user_spec_fovs = [int(val) for val in fovs]
+
     # make list of FOVs to process (keys of channel_mask file)
     fov_id_list = sorted([fov_id for fov_id in specs.keys()])
 
@@ -100,11 +114,11 @@ if __name__ == "__main__":
 
     # create dictionary which organizes cells by fov and peak_id
     Cells_by_peak = mm3_plots.organize_cells_by_channel(Complete_Cells, specs)
-    
-    # multiprocessing 
+
+    # multiprocessing
     color_multiproc = True
     if color_multiproc:
-        Cells_to_pool = [(fov_id, peak_id, Cells) for fov_id in fov_id_list for peak_id, Cells in Cells_by_peak[fov_id].items()] 
+        Cells_to_pool = [(fov_id, peak_id, Cells) for fov_id in fov_id_list for peak_id, Cells in Cells_by_peak[fov_id].items()]
         # print(Cells_to_pool[0:5])
         pool = Pool(processes=p['num_analyzers'])
 
@@ -118,19 +132,29 @@ if __name__ == "__main__":
         update_cells = {cell_id: cell for cells in update_cells for cell_id, cell in cells.items()}
         for cell_id, cell in update_cells.items():
             Complete_Cells[cell_id] = cell
-    
+
     # for each set of cells in one fov/peak, compute the fluorescence
-    else:
-        for fov_id in fov_id_list:
-            if fov_id in Cells_by_peak:
-                mm3.information('Processing FOV {}.'.format(fov_id))
-                for peak_id, Cells in Cells_by_peak[fov_id].items():
-                    mm3.information('Processing peak {}.'.format(peak_id))
-                    mm3.find_cell_intensities(fov_id, peak_id, Cells, midline=False)
+    for fov_id in fov_id_list:
+        if fov_id in Cells_by_peak:
+            #mm3.information('Processing FOV {}.'.format(fov_id))
+            for peak_id, Cells in Cells_by_peak[fov_id].items():
+                mm3.information('Processing FOV {:d} / Peak {:d}.'.format(fov_id, peak_id))
+                for color in colors:
+                    mm3.find_cell_intensities(fov_id, peak_id, Cells, midline=False, color=color)
+                    mycell = Cells.values()[0]
+#                print(vars(mycell).keys())
+#                print("volumes", mycell.volumes)
+#                print("areas", mycell.areas)
+#                print("fl_tots", mycell.fl_tots)
+#                print("fl_per_volumes", mycell.fl_per_volumes)
+#                print("fl_per_areas", mycell.fl_per_areas)
 
     # Just the complete cells, those with mother and daugther
     cell_filename = os.path.basename(cell_file_path)
-    with open(os.path.join(p['cell_dir'], cell_filename[:-4] + '_fl.pkl'), 'wb') as cell_file:
+    cell_bfilename = os.path.splitext(cell_filename)[0]
+    #fileout = os.path.join(p['cell_dir'], cell_bfilename + '_fl.pkl')
+    fileout = cell_file_path
+    with open(fileout, 'wb') as cell_file:
         pickle.dump(Complete_Cells, cell_file, protocol=pickle.HIGHEST_PROTOCOL)
 
-    mm3.information('Finished.')
+    mm3.information('Finished and written in {}.'.format(fileout))

@@ -1,0 +1,209 @@
+labels:
+  - "phase contrast only"
+  - "488 ex (100 ms)"
+  - "488 ex (100 ms) + 405 ex (100 ms)"
+  - "488 ex (200 ms)"
+  - "488 ex (200 ms) + 405 ex (100 ms)"
+colors:
+  - gray
+  - lightgreen
+  - darkgreen
+  - lightblue
+  - darkblue
+
+attributes:
+  queen:
+    label: Q
+    scale: 1
+  fl_px_med_med_405ex:
+    label: "$\\mathrm{med}(\\mathrm{med}(I_{405}))$ $(A.U.)$"
+    scale: 1
+  fl_px_med_med_488ex:
+    label: "$\\mathrm{med}(\\mathrm{med}(I_{488}))$ $(A.U.)$"
+    scale: 1
+  fl_per_volume_avg_405ex:
+    label: "$[I_{405}]$ $(A.U.)$"
+    scale: 1
+  fl_per_volume_avg_488ex:
+    label: "$[I_{488}]$ $(A.U.)$"
+    scale: 1
+  sd:
+    label: "$S_d$ $[\\mu m]$"
+    scale: 1
+  sb:
+    label: "$S_b$ $[\\mu m]$"
+    scale: 1
+  delta:
+    label: "$\\Delta_d$ $[\\mu m]$"
+    scale: 1
+  width_um:
+    label: "width $[\\mu m]$"
+    scale: 1
+  tau:
+    label: "$\\tau$ $[min]$"
+    scale: 1
+  times_min:
+    label: "time [h]"
+    scale: 0.017
+  abs_times:
+    label: "time [h]"
+    scale: 0.00028
+  growth_rate:
+    label: "$\\lambda$ $[h^{-1}]$"
+    scale: 60.
+
+plot_attribute_distribution_args:
+  general:
+      lw: 0.5
+      ms: 2
+      aratio: 2.2
+  plots:
+    growth_rate.png:
+      attr: growth_rate
+      bin_width: 0.10
+      units_dx: 0.5
+      xlo:  0.
+    size_division.png:
+      attr: sd
+      bin_width: 0.5
+      units_dx: 2.0
+      xlo:  0.
+      xhi:  14
+    size_birth.png:
+      attr: sb
+      bin_width: 0.25
+      units_dx: 1.0
+      xlo:  0.
+      xhi:  7.
+    size_added.png:
+      attr: delta
+      bin_width: 0.25
+      units_dx: 1.0
+      xlo:  0.
+      xhi:  7.
+    width.png:
+      attr: width_um
+      bin_width: 0.01
+      units_dx: 0.1
+      xlo:  0.4
+      xhi:  0.8
+    tau.png:
+      attr: tau
+      bin_width: 10
+      units_dx: 50
+      xlo:  0.
+      xhi:  null
+    fl_conc_405ex.png:
+      attr: fl_per_volume_avg_405ex
+      bin_width: 0.2
+      units_dx: 2.
+      xlo: 0.
+      xhi: 7.
+    fl_conc_488ex.png:
+      attr: fl_per_volume_avg_488ex
+      bin_width: 0.2
+      units_dx: 2.
+      xlo: 0.
+      xhi: 10.
+
+plot_attribute_time_args:
+  offsets:
+    - 0
+    - 240
+    - 602
+    - 784
+    - 1146
+  general:
+      lw: 0.5
+      ms: 1
+      aratio: 4
+      scatter_max_pts: 1000
+      units_dt: 1
+      tlo: 0.
+      bin_width: 0.5
+  plots:
+    growthrate_vs_tb.png:
+      attr: growth_rate
+      bin_width: 0.5
+      time_mode: null
+      units_dy: 0.1
+      units_dn: 100
+      ylims: [0., 1.2]
+#    sd_vs_times.png:
+#      attr: sd
+#      lw: 0.5
+#      ms: 1
+#      scatter_max_pts: 1000
+#      bin_method: median
+#      xformat: '{x:.0f}'
+#    fl405ex_conc_vs_tmid.png:
+#      attr: fl_per_volume_avg_405ex
+#      time_mode: 'middle'
+#      #units_dy: 2.
+#      #ylims: [2., 10.]
+#    fl488ex_conc_vs_tmid.png:
+#      attr: fl_per_volume_avg_488ex
+#      time_mode: 'middle'
+#      #units_dy: 2.
+#      #ylims: [2., 10.]
+
+plot_queen_distribution_args:
+    lw: 0.5
+    ms: 2
+    #units_dx: 0.5
+    xlos:
+      - 0.
+      - 0.
+      - 0.
+    xhis: null
+    #attrs:
+    backgrounds: null
+    bin_widths:
+      - 2.
+      - 1.
+      -
+        - 0.2
+        - 0.2
+        - 0.2
+        - 0.1
+        - 0.1
+
+plot_queen_time_args:
+  offsets:
+    - 0
+    - 240
+    - 602
+    - 784
+    - 1146
+  lw: 0.5
+  ms: 2
+  #units_dx: 0.5
+  aratio: 5
+  xlos:
+    - 0.
+    - 0.
+    - 0.
+  xhis: null
+  xlims:
+    -
+      - null
+      - 20
+    -
+      - null
+      - 20
+    -
+      - 0.
+      - 2.
+  tlo: 0.
+  thi: null
+  unit_dt: 1.
+  unit_dn: 100
+  units_dx:
+    - 5
+    - 5
+    - 0.5
+  #attrs:
+  backgrounds:
+    - 0.
+    - 0.
+  bin_width: 0.5

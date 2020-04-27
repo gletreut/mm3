@@ -56,13 +56,19 @@ if __name__ == "__main__":
                                      description='Identifies and slices out channels into individual TIFF stacks through time.')
     parser.add_argument('-f', '--paramfile',  type=str,
                         required=True, help='Yaml file containing parameters.')
-    parser.add_argument('-o', '--fov',  type=str,
-                        required=False, help='List of fields of view to analyze. Input "1", "1,2,3", or "1-10", etc.')
+    parser.add_argument('-d', '--outputdir',  type=str,
+                        required=False, default='.', help='Yaml file containing parameters.')
     parser.add_argument('-j', '--nproc',  type=int,
                         required=False, help='Number of processors to use.')
     parser.add_argument('-m', '--modelfile', type=str,
                         required=False, help='Path to trained U-net model.')
     namespace = parser.parse_args()
+
+    # output directory
+    outputdir=namespace.outputdir
+    if not os.path.isdir(outputdir):
+        os.makedirs(outputdir)
+        print("Making directory {:s}".format(outputdir))
 
     # Load the project parameters file
     mm3.information('Loading experiment parameters.')
@@ -71,16 +77,17 @@ if __name__ == "__main__":
     else:
         mm3.warning('No param file specified. Using 100X template.')
         param_file_path = 'yaml_templates/params_SJ110_100X.yaml'
-    p = mm3.init_mm3_helpers(param_file_path) # initialized the helper library
 
-    if namespace.fov:
-        if '-' in namespace.fov:
-            user_spec_fovs = range(int(namespace.fov.split("-")[0]),
-                                   int(namespace.fov.split("-")[1])+1)
-        else:
-            user_spec_fovs = [int(val) for val in namespace.fov.split(",")]
-    else:
-        user_spec_fovs = []
+    # init parameters
+    p = mm3.init_mm3_helpers(param_file_path, experiment_directory=outputdir) # initialized the helper library
+
+    # fovs
+    fovs = None
+    if ('fovs' in p):
+        fovs = p['fovs']
+    if (fovs is None):
+        fovs = []
+    user_spec_fovs = [int(val) for val in fovs]
 
     # number of threads for multiprocessing
     if namespace.nproc:
@@ -124,6 +131,7 @@ if __name__ == "__main__":
 
     else:
         mm3.information("Finding image parameters.")
+
 
         # get all the TIFFs in the folder
         found_files = glob.glob(os.path.join(p['TIFF_dir'],'*.tif')) # get all tiffs
@@ -295,12 +303,12 @@ if __name__ == "__main__":
 
                 # produces predition stack with 3 "pages", index 0 is for traps, index 1 is for central tough, index 2 is for background
                 mm3.information("Predicting trap locations for first frame.")
-                first_frame_trap_prediction = mm3.get_frame_predictions(img, 
-                                                                        model, 
-                                                                        stack_weights, 
-                                                                        trap_align_metadata['shift_distance'], 
-                                                                        subImageNumber=16, 
-                                                                        padSubImageNumber=25, 
+                first_frame_trap_prediction = mm3.get_frame_predictions(img,
+                                                                        model,
+                                                                        stack_weights,
+                                                                        trap_align_metadata['shift_distance'],
+                                                                        subImageNumber=16,
+                                                                        padSubImageNumber=25,
                                                                         debug=p['debug'])
 
                 if p['debug']:
@@ -560,6 +568,16 @@ if __name__ == "__main__":
                     elif p['output'] == "HDF5":
                         # Or write it to hdf5
                         mm3.save_hdf5(trap_images_fov_dict, fov_file_names, analyzed_imgs, fov_id, channel_masks)
+
+        # temp code for solving fov inconsistency issue in double row images - START
+        mm3.information('Checking fov inconsistency in FOV.')
+        for fn in analyzed_imgs.keys():
+            fov_fname = mm3.get_fov(fn)
+            fov = analyzed_imgs[fn]['fov']
+            if (fov != fov_fname):
+                mm3.information("Correcting fov for {}".format(fn))
+                analyzed_imgs[fn]['fov'] = fov_fname
+        # temp code for solving fov inconsistency issue in double row images - END
 
         # save metadata to a .pkl and a human readable txt file
         mm3.information('Saving metadata from analyzed images...')

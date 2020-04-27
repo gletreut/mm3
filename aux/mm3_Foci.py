@@ -6,8 +6,13 @@ import six
 import sys
 import os
 import inspect
+<<<<<<< HEAD
+import getopt
+import numpy as np
+=======
 import argparse
 import yaml
+>>>>>>> master
 try:
     import cPickle as pickle
 except:
@@ -120,7 +125,25 @@ if __name__ == "__main__":
     # create dictionary which organizes cells by fov and peak_id
     Cells_by_peak = organize_cells_by_channel(Cells, specs)
 
+    # time table
+    time_table_path = os.path.join(p['ana_dir'], 'time_table.pkl')
+    with open(time_table_path, 'r') as fin:
+        time_table = pickle.load(fin)
+    times_all = np.array(np.sort(time_table[fov_id].keys()), np.int_)
+    t0 = times_all[0] # first time index
+    tN = times_all[-1] # last time index
+    print ("t0 = {:d}    tN = {:d}".format(t0,tN))
+
+    # range of time
+    if (p['image_start'] < 1):
+        p['image_start']=1
+    p['image_end'] = np.min([p['image_end'],np.max([cell.division_time for cell in Cells.values()])])
+    if p['image_end'] < p['image_start']:
+        p['image_end'] = p['image_start']
+    extraction_range = range(p['image_start'], p['image_end']+1)
+
     # for each set of cells in one fov/peak, find the foci
+    #for fov_id in [10]:
     for fov_id in fov_id_list:
         if not fov_id in Cells_by_peak:
             continue
@@ -132,17 +155,31 @@ if __name__ == "__main__":
             # print (Cells_of_peak)
             if (len(Cells_of_peak) == 0):
                 continue
-
-            mm3.foci_analysis(fov_id, peak_id, Cells_of_peak)
+            if p['debug_foci']:
+                image_data_seg = mm3.load_stack(fov_id, peak_id, color='seg')
+                image_data_FL = mm3.load_stack(fov_id, peak_id, color='sub_{}'.format(p['foci_plane']))
+                for t in extraction_range:
+                    print ("t = {:d}".format(t))
+                    mm3.foci_lap_peak(image_data_seg[t-t0], image_data_FL[t-t0], fov_id=fov_id, peak_id=peak_id, t=t)
+            else:
+                mm3.foci_analysis(fov_id, peak_id, Cells_of_peak)
 
             # test
             # sys.exit()
 
     # Output data to both dictionary and the .mat format used by the GUI
-    cell_filename = os.path.basename(cell_file_path)
-    with open(os.path.join(p['cell_dir'], cell_filename[:-4] + '_foci.pkl'), 'wb') as cell_file:
+    fileout = os.path.join(p['cell_dir'], os.path.splitext(cell_filename)[0] + '_foci.pkl')
+    with open(fileout, 'wb') as cell_file:
+        mm3.information("Writing file: {}".format(fileout))
         pickle.dump(Cells, cell_file, protocol=pickle.HIGHEST_PROTOCOL)
-    with open(os.path.join(p['cell_dir'], cell_filename[:-4] + '_foci.mat'), 'wb') as cell_file:
+
+    for cell in Cells.values():
+        for attr in vars(cell).keys():
+            if (getattr(cell,attr) is None):
+                setattr(cell,attr,[])
+    fileout = os.path.join(p['cell_dir'], os.path.splitext(cell_filename)[0] + '_foci.mat')
+    with open(fileout, 'wb') as cell_file:
+        mm3.information("Writing file: {}".format(fileout))
         sio.savemat(cell_file, Cells)
 
     mm3.information("Finished foci analysis.")

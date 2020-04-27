@@ -277,7 +277,7 @@ if __name__ == "__main__":
         if not os.path.exists(plot_dir):
             os.makedirs(plot_dir)
 
-        # Data frame is convinient for plotting.
+        # Data frame is convenient for plotting.
         Cells_df = mm3_plots.cells2df(Cells)
 
         mm3.information('Plotting violin plots by FOV.')

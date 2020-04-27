@@ -20,6 +20,7 @@ import matplotlib as mpl
 # mpl.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
+from matplotlib.figure import figaspect
 
 # global settings mpl
 plt.rcParams['axes.linewidth']=0.5
@@ -72,11 +73,16 @@ def fov_plot_channels(fov_id, crosscorrs, specs, outputdir='.', phase_plane='c1'
 
     # set up figure for user assited choosing
     n_peaks = len(specs[fov_id].keys())
+    #axw,axh = figaspect(4)
     axw=1
     axh=4*axw
     nrows=3
     ncols=int(n_peaks)
-    fig = plt.figure(num='none', facecolor='w',figsize=(ncols*axw,nrows*axh))
+    figw = ncols*axw
+    figh = nrows*axh
+    maxpxw=1000.
+    dpi = maxpxw/figw
+    fig = plt.figure(num='none', facecolor='w',figsize=(figw,figh), dpi=dpi)
     gs = gridspec.GridSpec(nrows,ncols,wspace=0.5,hspace=0.1,top=0.90)
 
     # plot the peaks peak by peak using sorted list
@@ -102,7 +108,7 @@ def fov_plot_channels(fov_id, crosscorrs, specs, outputdir='.', phase_plane='c1'
         ax=axhi
         ax.imshow(first_img,cmap=plt.cm.gray, interpolation='nearest')
         ax.axis('off')
-        ax.set_title(str(peak_id), fontsize = 12)
+        ax.set_title(str(peak_id), fontsize = 'medium')
         if n == 0:
             ax.set_ylabel("first time point")
 
@@ -132,7 +138,7 @@ def fov_plot_channels(fov_id, crosscorrs, specs, outputdir='.', phase_plane='c1'
         if crosscorrs: # don't try to plot if it's not there.
             ccs = peak_xc['ccs'] # list of cc values
             ax.plot(ccs,range(len(ccs)))
-            ax.set_title('avg=%1.2f' % peak_xc['cc_avg'], fontsize = 8)
+            ax.set_title('avg=%1.2f' % peak_xc['cc_avg'], fontsize = 'small')
         else:
             ax.plot(np.zeros(10), range(10))
 
@@ -145,7 +151,7 @@ def fov_plot_channels(fov_id, crosscorrs, specs, outputdir='.', phase_plane='c1'
             ax.set_ylabel("time index, CC on X")
 
 
-    fig.suptitle("FOV {:d}".format(fov_id),fontsize=14)
+    fig.suptitle("FOV {:d}".format(fov_id),fontsize='large')
     fileout=os.path.join(outputdir,'fov_xy{:03d}.pdf'.format(fov_id))
     fig.savefig(fileout,bbox_inches='tight',pad_inches=0)
     plt.close('all')
@@ -463,7 +469,7 @@ def fov_choose_channels_UI(fov_id, crosscorrs, specs, UI_images):
         if crosscorrs: # don't try to plot if it's not there.
             ccs = peak_xc['ccs'] # list of cc values
             ax[-1].plot(ccs, range(len(ccs)))
-            ax[-1].set_title('avg=%1.2f' % peak_xc['cc_avg'], fontsize = 8)
+            ax[-1].set_title('avg=%1.2f' % peak_xc['cc_avg'], fontsize = 'x-small')
         else:
             pass
             # ax[-1].plot(np.zeros(10), range(10))
@@ -821,20 +827,25 @@ if __name__ == "__main__":
                                      description='Determines which channels should be analyzed, used as empties for subtraction, or ignored.')
     parser.add_argument('-f', '--paramfile', type=str,
                         required=True, help='Yaml file containing parameters.')
-    parser.add_argument('-o', '--fov',  type=str,
-                        required=False, help='List of fields of view to analyze. Input "1", "1,2,3", or "1-10", etc.')
     parser.add_argument('-j', '--nproc',  type=int,
                         required=False, help='Number of processors to use.')
     # parser.add_argument('-s', '--specfile',  type=file,
     #                     required=False, help='Filename of specs file.')
     parser.add_argument('-i', '--noninteractive', action='store_true',
                         required=False, help='Do channel picking manually.')
+    parser.add_argument('-d', '--outputdir',  type=str,
+                        required=False, default='.', help='Output directory (tree root).')
     parser.add_argument('-c', '--saved_cross_correlations', action='store_true',
                         required=False, help='Load cross correlation data instead of computing.')
     parser.add_argument('-s', '--specfile', type=str,
                         required=False, help='Path to spec.yaml file.')
     namespace = parser.parse_args()
 
+    # output directory
+    outputdir=namespace.outputdir
+    if not os.path.isdir(outputdir):
+        os.makedirs(outputdir)
+        print("Making directory {:s}".format(outputdir))
 
     # Load the project parameters file
     mm3.information('Loading experiment parameters.')
@@ -843,22 +854,23 @@ if __name__ == "__main__":
     else:
         mm3.warning('No param file specified. Using 100X template.')
         param_file_path = 'yaml_templates/params_SJ110_100X.yaml'
-    p = mm3.init_mm3_helpers(param_file_path) # initialized the helper library
 
-    if namespace.fov:
-        if '-' in namespace.fov:
-            user_spec_fovs = range(int(namespace.fov.split("-")[0]),
-                                   int(namespace.fov.split("-")[1])+1)
-        else:
-            user_spec_fovs = [int(val) for val in namespace.fov.split(",")]
-    else:
-        user_spec_fovs = []
+    # init parameters
+    p = mm3.init_mm3_helpers(param_file_path, experiment_directory=outputdir) # initialized the helper library
+
+    # fovs
+    fovs = None
+    if ('fovs' in p):
+        fovs = p['fovs']
+    if (fovs is None):
+        fovs = []
+    user_spec_fovs = [int(val) for val in fovs]
 
     # number of threads for multiprocessing
     if namespace.nproc:
         p['num_analyzers'] = namespace.nproc
     else:
-        p['num_analyzers'] = 6
+        p['num_analyzers'] = 2
 
     # use previous specfile
     if namespace.specfile:
@@ -875,7 +887,7 @@ if __name__ == "__main__":
     if namespace.saved_cross_correlations:
         do_crosscorrs = False
     else:
-        do_crosscorrs = p['channel_picker']['do_crosscorrs']
+        do_crosscorrs = True
 
     do_CNN = p['channel_picker']['do_CNN']
     do_seg = p['channel_picker']['do_seg']
@@ -884,12 +896,13 @@ if __name__ == "__main__":
     if namespace.noninteractive:
         interactive = False
     else:
-        interactive = p['channel_picker']['interactive']
+        interactive = True
 
     # assign shorthand directory names
-    ana_dir = os.path.join(p['experiment_directory'], p['analysis_directory'])
-    chnl_dir = os.path.join(p['experiment_directory'], p['analysis_directory'], 'channels')
-    hdf5_dir = os.path.join(p['experiment_directory'], p['analysis_directory'], 'hdf5')
+    experiment_directory=outputdir
+    ana_dir = os.path.join(experiment_directory, p['analysis_directory'])
+    chnl_dir = os.path.join(experiment_directory, p['analysis_directory'], 'channels')
+    hdf5_dir = os.path.join(experiment_directory, p['analysis_directory'], 'hdf5')
 
     # load channel masks
     channel_masks = mm3.load_channel_masks()
@@ -910,6 +923,13 @@ if __name__ == "__main__":
         predictionDict = {}
 
         mm3.information('Loading model ....')
+        try:
+            with open(os.path.join(ana_dir,'crosscorrs.pkl'), 'r') as xcorrs_file:
+                crosscorrs = pickle.load(xcorrs_file)
+        except:
+            crosscorrs = None
+            mm3.information('Precalculated cross-correlations not found.')
+            sys.exit()
 
         # read in model for inference of empty vs good traps
         model_file_path = p['channel_picker']['channel_picker_model_file']
@@ -1019,7 +1039,7 @@ if __name__ == "__main__":
                     counter += 1
 
             pad_dict = mm3.get_pad_distances(unet_shape, img_height, img_width)
-            
+
             # pad image to correct size
             if p['debug']:
                 print("Padding dictionary:", pad_dict)
@@ -1101,11 +1121,10 @@ if __name__ == "__main__":
                 mm3.information("Calculating cross correlations for peak %d." % peak_id)
 
                 # linear loop
-                # crosscorrs[fov_id][peak_id] = mm3.channel_xcorr(fov_id, peak_id)
+                #crosscorrs[fov_id][peak_id] = mm3.channel_xcorr(fov_id, peak_id)
 
                 # # multiprocessing verion
-                crosscorrs[fov_id][peak_id] = pool.apply_async(mm3.channel_xcorr,
-                                                               args=(fov_id, peak_id,))
+                crosscorrs[fov_id][peak_id] = pool.apply_async(mm3.channel_xcorr, args=(fov_id, peak_id,))
 
             mm3.information('Waiting for cross correlation pool to finish for FOV %d.' % fov_id)
 
@@ -1145,7 +1164,7 @@ if __name__ == "__main__":
             mm3.information('Could not load cross-correlations.')
 
     ### User selection (channel picking) #####################################################
-    if specfile == None:
+    if specfile is None:
         mm3.information('Initializing specifications file.')
         # nested dictionary of {fov : {peak : spec ...}) for if channel should
         # be analyzed, used for empty, or ignored.
@@ -1221,19 +1240,14 @@ if __name__ == "__main__":
                 specs = fov_choose_channels_UI(fov_id, crosscorrs, specs, UI_images)
 
     else:
-        outputdir = os.path.join(ana_dir, "fovs")
-        if not os.path.isdir(outputdir):
-            os.makedirs(outputdir)
+        print("!!CODE NEEDED HERE!!")
+        pass
+        channel_picker_outputdir = os.path.join(ana_dir, "fovs")
+        if not os.path.isdir(channel_picker_outputdir):
+            os.makedirs(channel_picker_outputdir)
         for fov_id in fov_id_list:
-            if crosscorrs:
-                specs = fov_plot_channels(fov_id, crosscorrs, specs,
-                                          outputdir=outputdir, phase_plane=p['phase_plane'])
-            elif do_CNN:
-                specs = fov_CNN_plot_channels(fov_id, predictionDict, specs,
-                                              outputdir=outputdir, phase_plane=p['phase_plane'])
-            elif do_seg:
-                specs = fov_cell_segger_plot_channels(fov_id, predictionDict, specs,
-                                              outputdir=outputdir, phase_plane=p['phase_plane'])
+            specs = fov_plot_channels(fov_id, crosscorrs, specs,
+                                      outputdir=channel_picker_outputdir, phase_plane=p['phase_plane'])
 
     # Save out specs file in yaml format
     if not os.path.isfile(os.path.join(ana_dir, 'specs.yaml')):

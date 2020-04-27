@@ -28,9 +28,11 @@ import networkx as nx
 import collections
 
 # scipy and image analysis
+import cv2
 from scipy.signal import find_peaks_cwt # used in channel finding
 from scipy.optimize import curve_fit # fitting ring profile
 from scipy.optimize import leastsq # fitting 2d gaussian
+from scipy.stats import iqr # used for attributes of fluorescence
 from scipy import ndimage as ndi # labeling and distance transform
 from skimage import io
 from skimage import segmentation # used in make_masks and segmentation
@@ -69,6 +71,9 @@ mpl.rc('font', **font)
 mpl.rcParams['pdf.fonttype'] = 42
 from matplotlib.patches import Ellipse
 
+# global variables
+verbose=False
+
 # user modules
 # realpath() will make your script run, even if you symlink it
 cmd_folder = os.path.realpath(os.path.abspath(
@@ -88,7 +93,7 @@ def information(*objs):
     print(time.strftime("%H:%M:%S", time.localtime()), *objs, file=sys.stdout)
 
 # load the parameters file into a global dictionary for this module
-def init_mm3_helpers(param_file_path):
+def init_mm3_helpers(param_file_path, experiment_directory='.'):
     # load all the parameters into a global dictionary
     global params
     with open(param_file_path, 'r') as param_file:
@@ -98,8 +103,8 @@ def init_mm3_helpers(param_file_path):
     params['num_analyzers'] = multiprocessing.cpu_count()
 
     # useful folder shorthands for opening files
-    params['TIFF_dir'] = os.path.join(params['experiment_directory'], params['image_directory'])
-    params['ana_dir'] = os.path.join(params['experiment_directory'], params['analysis_directory'])
+    params['TIFF_dir'] = os.path.join(experiment_directory, params['image_directory'])
+    params['ana_dir'] = os.path.join(experiment_directory, params['analysis_directory'])
     params['hdf5_dir'] = os.path.join(params['ana_dir'], 'hdf5')
     params['chnl_dir'] = os.path.join(params['ana_dir'], 'channels')
     params['empty_dir'] = os.path.join(params['ana_dir'], 'empties')
@@ -135,6 +140,18 @@ def julian_day_number():
 
     return jdn
 
+def get_expname(filepath):
+    # match time pattern
+    pattern = '(_t\d+\w+.tif)'
+    res = re.search(pattern,filepath)
+    if (res != None):
+         myend = res.group(1)
+    else:
+        return None
+    ind = filepath.find(myend)
+    pref = filepath[:ind]
+    return pref
+
 def get_plane(filepath):
     pattern = r'(c\d+).tif'
     res = re.search(pattern,filepath)
@@ -143,19 +160,25 @@ def get_plane(filepath):
     else:
         return None
 
-def get_fov(filepath):
-    pattern = r'xy(\d+)\w*.tif'
+def get_fov(filepath, string=False):
+    pattern = 'xy(\d+)\w*.tif'
     res = re.search(pattern,filepath)
     if (res != None):
-        return int(res.group(1))
+        if (string):
+            return res.group(1)
+        else:
+            return int(res.group(1))
     else:
         return None
 
-def get_time(filepath):
-    pattern = r't(\d+)xy\w+.tif'
+def get_time(filepath, string=False):
+    pattern = 't(\d+)xy\w+.tif'
     res = re.search(pattern,filepath)
     if (res != None):
-        return np.int_(res.group(1))
+        if (string):
+            return res.group(1)
+        else:
+            return int(res.group(1))
     else:
         return None
 
@@ -185,17 +208,23 @@ def load_stack(fov_id, peak_id, color='c1', image_return_number=None):
     image_stack : np.ndarray
         The image stack through time. Shape is (t, y, x)
     '''
+    global params
+
+    fmt_fov = params['formats']['fov']
+    fmt_peak = params['formats']['peak']
+    fmt_plane = params['formats']['plane']
 
     # things are slightly different for empty channels
     if 'empty' in color:
         if params['output'] == 'TIFF':
-            img_filename = params['experiment_name'] + '_xy%03d_%s.tif' % (fov_id, color)
+            img_filename = params['experiment_name'] + '_' + fmt_fov + '_%s.tif'
+            img_filename = img_filename % (fov_id, color)
 
             with tiff.TiffFile(os.path.join(params['empty_dir'],img_filename)) as tif:
                 img_stack = tif.asarray()
 
         if params['output'] == 'HDF5':
-            with h5py.File(os.path.join(params['hdf5_dir'],'xy%03d.hdf5' % fov_id), 'r') as h5f:
+            with h5py.File(os.path.join(params['hdf5_dir'], fmt_fov % fov_id + '.hdf5'), 'r') as h5f:
                 img_stack = h5f[color][:]
 
         return img_stack
@@ -211,16 +240,20 @@ def load_stack(fov_id, peak_id, color='c1', image_return_number=None):
         elif 'seg' in color:
             img_dir = params['seg_dir']
 
-        img_filename = params['experiment_name'] + '_xy%03d_p%04d_%s.tif' % (fov_id, peak_id, color)
+        img_filename = params['experiment_name'] + '_' + fmt_fov + '_' + fmt_peak + '_%s.tif'
+        img_filename = img_filename % (fov_id, peak_id, color)
+
+        #information("Loading file {:s}".format(os.path.join(img_dir, img_filename)))
 
         with tiff.TiffFile(os.path.join(img_dir, img_filename)) as tif:
             img_stack = tif.asarray()
 
     if params['output'] == 'HDF5':
-        with h5py.File(os.path.join(params['hdf5_dir'], 'xy%03d.hdf5' % fov_id), 'r') as h5f:
+        with h5py.File(os.path.join(params['hdf5_dir'], fmt_fov % fov_id + '.hdf5'), 'r') as h5f:
             # normal naming
             # need to use [:] to get a copy, else it references the closed hdf5 dataset
-            img_stack = h5f['channel_%04d/p%04d_%s' % (peak_id, peak_id, color)][:]
+            #img_stack = h5f['channel_%04d/p%04d_%s' % (peak_id, peak_id, color)][:]
+            img_stack = h5f['channel_' + fmt_fov + '/p' + fmt_peak + '_%s' % (fov_id, peak_id, color)][:]
 
     return img_stack
 
@@ -678,6 +711,10 @@ def tiff_stack_slice_and_write(images_to_write, channel_masks, analyzed_imgs):
 
     # go through list of images and get the file path
     for n, image in enumerate(images_to_write):
+        fbname = image[0]
+        fpref = get_expname(fbname)
+        fov_str = get_fov(fbname, string=True)
+
         # analyzed_imgs dictionary will be found in main scope. [0] is the key, [1] is jd
         image_params = analyzed_imgs[image[0]]
 
@@ -725,7 +762,8 @@ def tiff_stack_slice_and_write(images_to_write, channel_masks, analyzed_imgs):
         for color_index in range(channel_stack.shape[3]):
             # this is the filename for the channel
             # # chnl_dir and p will be looked for in the scope above (__main__)
-            channel_filename = os.path.join(params['chnl_dir'], params['experiment_name'] + '_xy%03d_p%04d_c%1d.tif' % (fov_id, peak, color_index+1))
+            #channel_filename = os.path.join(params['chnl_dir'], fpref + '_xy%03d_p%04d_c%1d.tif' % (fov_id, peak, color_index+1))
+            channel_filename = os.path.join(params['chnl_dir'], fpref + '_xy' + fov_str + '_p%04d' %(peak) + "_c%1d" %(color_index+1) + '.tif')
             # save stack
             tiff.imsave(channel_filename, channel_stack[:,:,:,color_index], compress=4)
 
@@ -823,6 +861,8 @@ def hdf5_stack_slice_and_write(images_to_write, channel_masks, analyzed_imgs):
     Called by
     __main__
     '''
+
+
 
     # make an array of images and then concatenate them into one big stack
     image_fov_stack = []
@@ -1416,12 +1456,14 @@ def make_masks(analyzed_imgs):
     #intiaize dictionary
     channel_masks = {}
 
+    """ test 20180521 - start
     # get the size of the images (hope they are the same)
     for img_k in analyzed_imgs.keys():
         img_v = analyzed_imgs[img_k]
         image_rows = img_v['shape'][0] # x pixels
         image_cols = img_v['shape'][1] # y pixels
         break # just need one. using iteritems mean the whole dict doesn't load
+    # test 20180521 - end """
 
     # get the fov ids
     fovs = []
@@ -1439,7 +1481,7 @@ def make_masks(analyzed_imgs):
     for fov in fovs:
         # initialize a the dict and consensus mask
         channel_masks_1fov = {} # dict which holds channel masks {peak : [[y1, y2],[x1,x2]],...}
-        consensus_mask = np.zeros([image_rows, image_cols]) # mask for labeling
+        #consensus_mask = np.zeros([image_rows, image_cols]) # mask for labeling
 
         # bring up information for each image
         for img_k in analyzed_imgs.keys():
@@ -1447,6 +1489,11 @@ def make_masks(analyzed_imgs):
             # skip this one if it is not of the current fov
             if img_v['fov'] != fov:
                 continue
+
+            # get the size of the images (hope they are the same)
+            image_rows = img_v['shape'][0] # x pixels
+            image_cols = img_v['shape'][1] # y pixels
+            consensus_mask = np.zeros([image_rows, image_cols]) # mask for labeling
 
             # for each channel in each image make a single mask
             img_chnl_mask = np.zeros([image_rows, image_cols])
@@ -1766,6 +1813,11 @@ def average_empties_stack(fov_id, specs, color='c1', align=True):
         Saves empty stack to analysis folder
 
     '''
+    global params
+
+    fmt_fov = params['formats']['fov']
+    fmt_peak = params['formats']['peak']
+    fmt_plane = params['formats']['plane']
 
     information("Creating average empty channel for FOV %d." % fov_id)
 
@@ -1817,11 +1869,11 @@ def average_empties_stack(fov_id, specs, color='c1', align=True):
     # save out data
     if params['output'] == 'TIFF':
         # make new name and save it
-        empty_filename = params['experiment_name'] + '_xy%03d_empty_%s.tif' % (fov_id, color)
+        empty_filename = (params['experiment_name'] + '_' + fmt_fov + '_empty_%s.tif') % (fov_id, color)
         tiff.imsave(os.path.join(params['empty_dir'],empty_filename), avg_empty_stack, compress=4)
 
     if params['output'] == 'HDF5':
-        h5f = h5py.File(os.path.join(params['hdf5_dir'],'xy%03d.hdf5' % fov_id), 'r+')
+        h5f = h5py.File(os.path.join(params['hdf5_dir'], (fmt_fov + '.hdf5') % fov_id), 'r+')
 
         # delete the dataset if it exists (important for debug)
         if 'empty_%s' % color in h5f:
@@ -1903,6 +1955,13 @@ def average_empties(imgs, align=True):
 def copy_empty_stack(from_fov, to_fov, color='c1'):
     '''Copy an empty stack from one FOV to another'''
 
+    global params
+
+    fmt_fov = params['formats']['fov']
+    fmt_peak = params['formats']['peak']
+    fmt_plane = params['formats']['plane']
+
+
     # load empty stack from one FOV
     information('Loading empty stack from FOV {} to save for FOV {}.'.format(from_fov, to_fov))
     avg_empty_stack = load_stack(from_fov, 0, color='empty_{}'.format(color))
@@ -1910,11 +1969,11 @@ def copy_empty_stack(from_fov, to_fov, color='c1'):
     # save out data
     if params['output'] == 'TIFF':
         # make new name and save it
-        empty_filename = params['experiment_name'] + '_xy%03d_empty_%s.tif' % (to_fov, color)
+        empty_filename = (params['experiment_name'] + '_'+fmt_fov+'_empty_%s.tif') % (to_fov, color)
         tiff.imsave(os.path.join(params['empty_dir'],empty_filename), avg_empty_stack, compress=4)
 
     if params['output'] == 'HDF5':
-        h5f = h5py.File(os.path.join(params['hdf5_dir'],'xy%03d.hdf5' % to_fov), 'r+')
+        h5f = h5py.File(os.path.join(params['hdf5_dir'], (fmt_fov + '.hdf5') % to_fov), 'r+')
 
         # delete the dataset if it exists (important for debug)
         if 'empty_%s' % color in h5f:
@@ -1934,7 +1993,7 @@ def copy_empty_stack(from_fov, to_fov, color='c1'):
     information("Saved empty channel for FOV %d." % to_fov)
 
 # Do subtraction for an fov over many timepoints
-def subtract_fov_stack(fov_id, specs, color='c1', method='phase'):
+def subtract_fov_stack(fov_id, specs, color='c1', method='phase',nproc=2):
     '''
     For a given FOV, loads the precomputed empty stack and does subtraction on
     all peaks in the FOV designated to be analyzed
@@ -1951,6 +2010,11 @@ def subtract_fov_stack(fov_id, specs, color='c1', method='phase'):
     mm3.subtract_phase
 
     '''
+    global params
+    fmt_fov = params['formats']['fov']
+    fmt_peak = params['formats']['peak']
+    fmt_plane = params['formats']['plane']
+
 
     information('Subtracting peaks for FOV %d.' % fov_id)
 
@@ -1980,7 +2044,8 @@ def subtract_fov_stack(fov_id, specs, color='c1', method='phase'):
         subtract_pairs = zip(image_data, avg_empty_stack)
 
         # set up multiprocessing pool to do subtraction. Should wait until finished
-        pool = Pool(processes=params['num_analyzers'])
+        #pool = Pool(processes=params['num_analyzers'])
+        pool = Pool(nproc)
 
         if method == 'phase':
             subtracted_imgs = pool.map(subtract_phase, subtract_pairs, chunksize=10)
@@ -1998,11 +2063,11 @@ def subtract_fov_stack(fov_id, specs, color='c1', method='phase'):
 
         # save out the subtracted stack
         if params['output'] == 'TIFF':
-            sub_filename = params['experiment_name'] + '_xy%03d_p%04d_sub_%s.tif' % (fov_id, peak_id, color)
+            sub_filename = (params['experiment_name'] + '_'+fmt_fov+'_'+fmt_peak+'_sub_%s.tif') % (fov_id, peak_id, color)
             tiff.imsave(os.path.join(params['sub_dir'],sub_filename), subtracted_stack, compress=4) # save it
 
         if params['output'] == 'HDF5':
-            h5f = h5py.File(os.path.join(params['hdf5_dir'],'xy%03d.hdf5' % fov_id), 'r+')
+            h5f = h5py.File(os.path.join(params['hdf5_dir'],(fmt_fov+'.hdf5') % fov_id), 'r+')
 
             # put subtracted channel in correct group
             h5g = h5f['channel_%04d' % peak_id]
@@ -2123,7 +2188,7 @@ def subtract_fluor(image_pair):
 ### functions that deal with segmentation and lineages
 
 # Do segmentation for an channel time stack
-def segment_chnl_stack(fov_id, peak_id):
+def segment_chnl_stack(fov_id, peak_id,nproc=2):
     '''
     For a given fov and peak (channel), do segmentation for all images in the
     subtracted .tif stack.
@@ -2134,25 +2199,31 @@ def segment_chnl_stack(fov_id, peak_id):
     Calls
     mm3.segment_image
     '''
+    global params
+    fmt_fov = params['formats']['fov']
+    fmt_peak = params['formats']['peak']
+    fmt_plane = params['formats']['plane']
+
 
     information('Segmenting FOV %d, channel %d.' % (fov_id, peak_id))
 
     # load subtracted images
     sub_stack = load_stack(fov_id, peak_id, color='sub_{}'.format(params['phase_plane']))
 
-    # set up multiprocessing pool to do segmentation. Will do everything before going on.
-    pool = Pool(processes=params['num_analyzers'])
+#    # set up multiprocessing pool to do segmentation. Will do everything before going on.
+#    #pool = Pool(processes=params['num_analyzers'])
+#    pool = Pool(nproc)
+#
+#    # send the 3d array to multiprocessing
+#    segmented_imgs = pool.map(segment_image, sub_stack, chunksize=8)
+#
+#    pool.close() # tells the process nothing more will be added.
+#    pool.join() # blocks script until everything has been processed and workers exit
 
-    # send the 3d array to multiprocessing
-    segmented_imgs = pool.map(segment_image, sub_stack, chunksize=8)
-
-    pool.close() # tells the process nothing more will be added.
-    pool.join() # blocks script until everything has been processed and workers exit
-
-    # # image by image for debug
-    # segmented_imgs = []
-    # for sub_image in sub_stack:
-    #     segmented_imgs.append(segment_image(sub_image))
+    # image by image for debug
+    segmented_imgs = []
+    for sub_image in sub_stack:
+        segmented_imgs.append(segment_image(sub_image))
 
     # stack them up along a time axis
     segmented_imgs = np.stack(segmented_imgs, axis=0)
@@ -2160,12 +2231,12 @@ def segment_chnl_stack(fov_id, peak_id):
 
     # save out the segmented stack
     if params['output'] == 'TIFF':
-        seg_filename = params['experiment_name'] + '_xy%03d_p%04d_%s.tif' % (fov_id, peak_id, params['seg_img'])
+        seg_filename = (params['experiment_name'] + '_'+fmt_fov+'_'+fmt_peak+'_seg.tif') % (fov_id, peak_id)
         tiff.imsave(os.path.join(params['seg_dir'],seg_filename),
                     segmented_imgs, compress=5)
 
     if params['output'] == 'HDF5':
-        h5f = h5py.File(os.path.join(params['hdf5_dir'],'xy%03d.hdf5' % fov_id), 'r+')
+        h5f = h5py.File(os.path.join(params['hdf5_dir'],(fmt_fov+'.hdf5') % fov_id), 'r+')
 
         # put segmented channel in correct group
         h5g = h5f['channel_%04d' % peak_id]
@@ -2197,21 +2268,59 @@ def segment_image(image):
         should correspond to cells, all have the same integer value starting with 1.
         Non labeled area should have value zero.
     '''
+    global verbose
+
+    # parameters
+    norm8 = int(2**8-1)
+    norm16 = int(2**16-1)
 
     # load in segmentation parameters
-    OTSU_threshold = params['segment']['otsu']['OTSU_threshold']
-    first_opening_size = params['segment']['otsu']['first_opening_size']
-    distance_threshold = params['segment']['otsu']['distance_threshold']
-    second_opening_size = params['segment']['otsu']['second_opening_size']
-    min_object_size = params['segment']['min_object_size']
+    #OTSU_threshold = params['OTSU_threshold']
+    threshold = params['threshold']
+    first_opening_size = params['first_opening_size']
+    distance_threshold = params['distance_threshold']
+    second_opening_size = params['second_opening_size']
+    min_object_size = params['min_object_size']
 
-    # threshold image
-    try:
-        thresh = threshold_otsu(image) # finds optimal OTSU threshhold value
-    except:
-        return np.zeros_like(image)
+    # rescale dynamic range linearly (important for OTSU)
+    # assuming the input image is in 16-bit format
+    img = np.array(image, dtype=np.float_) / float(norm16)    # convert to float
+    amin = np.min(img)
+    amax = np.max(img)
 
-    threshholded = image > OTSU_threshold*thresh # will create binary image
+    if (verbose):
+        print ("Image px value (16-bits) min = {:.1g}    max = {:.1g}".format(amin,amax))
+    img = (np.float_(img) - amin)/(amax-amin)   # float image [0,1]
+    #return np.array(img*norm16, dtype=np.uint16)
+
+    # convert to 8-bit image (Open CV requirement for OTSU)
+    img = np.array(img*float(norm8),np.uint8)
+    if threshold is None:
+        if (verbose):
+            print ("OTSU thresholding")
+        #return np.array(img)
+        # OTSU threshold
+        ret,img_bin = cv2.threshold(img, 0, 255, cv2.THRESH_BINARY+cv2.THRESH_OTSU)
+        thres1 = float(ret)/norm8*(amax-amin) + amin
+        #thres1 = float(ret)/norm8
+        thres8 = np.uint8(thres1*norm8)
+        thres16 = np.uint16(thres1*norm16)
+    else:
+        thres16 = np.uint16(threshold)
+        thres1 = float(threshold) / norm16
+        thres8 = np.uint8(thres1*norm8)
+        ret = max((thres1 - amin)/(amax-amin),0) # value in rescaled DNR
+        ret = np.uint8(255*ret) # uint8
+        #print ("thres1 = {:.1g}    threshold_rescaled_DNR_uint8 = {:d}".format(thres1,ret))
+        # input threshold
+        ret1,img_bin = cv2.threshold(img,ret,255,cv2.THRESH_BINARY)
+
+    if (verbose):
+        print ("thres16 = {:d} (original image). thres1 = {:.1g}    thres8 = {:d}".format(thres16, thres1, thres8))
+    #img = img*(amax-amin) + amin   # back to original scaling if needed
+
+    threshholded = np.array(img_bin/norm8, dtype=np.bool)
+    #threshholded = img > OTSU_threshold*thresh # will create binary image
 
     # if there are no cells, good to clear the border
     # because otherwise the OTSU is just for random bullshit, most
@@ -2378,11 +2487,11 @@ def segment_cells_unet(ana_peak_ids, fov_id, pad_dict, unet_shape, model):
         if params['segment']['normalize_to_one'] is not None:
             med_stack = np.zeros(img_stack.shape)
             selem = morphology.disk(1)
-            
+
             for frame_idx in range(img_stack.shape[0]):
                 tmpImg = img_stack[frame_idx,...]
                 med_stack[frame_idx,...] = median(tmpImg, selem)
-            
+
             # robust normalization of peak's image stack to 1
             max_val = np.max(med_stack)
             img_stack = img_stack/max_val
@@ -3100,7 +3209,7 @@ def make_lineages_fov(fov_id, specs):
     fov_and_peak_ids_list = [(fov_id, peak_id) for peak_id in ana_peak_ids]
 
     # set up multiprocessing pool. will complete pool before going on
-    pool = Pool(processes=params['num_analyzers'])
+    pool = Pool(nproc)
 
     # create the lineages for each peak individually
     # the output is a list of dictionaries
@@ -6095,16 +6204,19 @@ def find_cell_intensities_worker(fov_id, peak_id, Cells, midline=True, channel='
     # return the cell object to the pool initiated by mm3_Colors.
     return Cells
 
-def find_cell_intensities(fov_id, peak_id, Cells, midline=False, channel_name='sub_c2'):
+def find_cell_intensities(fov_id, peak_id, Cells, midline=False, color='c1'):
     '''
     Finds fluorescenct information for cells. All the cells in Cells
     should be from one fov/peak. See the function
     organize_cells_by_channel()
     '''
 
+    # default suffix is on the subtracted image
+    suf = 'sub_' + color
+
     # Load fluorescent images and segmented images for this channel
-    fl_stack = load_stack(fov_id, peak_id, color=channel_name)
-    seg_stack = load_stack(fov_id, peak_id, color='seg_unet')
+    fl_stack = load_stack(fov_id, peak_id, color=suf)
+    seg_stack = load_stack(fov_id, peak_id, color='seg')
 
     # determine absolute time index
     times_all = []
@@ -6114,28 +6226,49 @@ def find_cell_intensities(fov_id, peak_id, Cells, midline=False, channel_name='s
     times_all = np.sort(times_all)
     times_all = np.array(times_all,np.int_)
     t0 = times_all[0] # first time index
+    ## note:
+    ## times are the frame numbers, starting from 1 (ie as in the file names).
+
+#    print("Times recorded in cells attributes")
+#    times_cells_all = np.unique(np.concatenate([cell.times for cell in Cells.values()]))
+#    print(times_cells_all)
+
+    # attributes that will be filled in
+    newattrs = ['fl_tots', 'fl_px_avgs', 'fl_px_stds', 'fl_px_meds', 'fl_px_iqrs', 'fl_per_areas', 'fl_per_volumes']
+    if midline:
+        newattrs.append('fl_midlines')
 
     # Loop through cells
     for Cell in Cells.values():
-        # give this cell two lists to hold new information
-        Cell.fl_tots = [] # total fluorescence per time point
-        Cell.fl_area_avgs = [] # avg fluorescence per unit area by timepoint
-        Cell.fl_vol_avgs = [] # avg fluorescence per unit volume by timepoint
+        # create attribute dictionaries if not existing
+        for attr in newattrs:
+            if not hasattr(Cell, attr):
+                setattr(Cell, attr, {}) # empty dictionary
 
-        if midline:
-            Cell.mid_fl = [] # avg fluorescence of midline
+        attr_vals = {attr: [] for attr in newattrs}
 
         # and the time points that make up this cell's life
         for n, t in enumerate(Cell.times):
             # create fluorescent image only for this cell and timepoint.
             fl_image_masked = np.copy(fl_stack[t-t0])
-            fl_image_masked[seg_stack[t-t0] != Cell.labels[n]] = 0
+            #fl_image_masked[seg_stack[t-t0] != Cell.labels[n]] = 0 # leads to inefficient summation
+            idx = (seg_stack[t-t0] == Cell.labels[n])
 
-            # append total flourescent image
-            Cell.fl_tots.append(np.sum(fl_image_masked))
-            # and the average fluorescence
-            Cell.fl_area_avgs.append(np.sum(fl_image_masked) / Cell.areas[n])
-            Cell.fl_vol_avgs.append(np.sum(fl_image_masked) / Cell.volumes[n])
+            # compute attribute values at this time point
+            fl_tot = np.sum(fl_image_masked[idx])
+            fl_px_avg = np.nanmean(fl_image_masked[idx])
+            fl_px_std = np.nanstd(fl_image_masked[idx])
+            fl_px_med = np.nanmedian(fl_image_masked[idx])
+            fl_px_iqr= iqr(fl_image_masked[idx])
+            fl_per_area = float(fl_tot) / float(Cell.areas[n])
+            fl_per_volume = float(fl_tot) / float(Cell.volumes[n])
+            attr_vals['fl_tots'].append(fl_tot)
+            attr_vals['fl_px_avgs'].append(fl_px_avg)
+            attr_vals['fl_px_stds'].append(fl_px_std)
+            attr_vals['fl_px_meds'].append(fl_px_med)
+            attr_vals['fl_px_iqrs'].append(fl_px_iqr)
+            attr_vals['fl_per_areas'].append(fl_per_area)
+            attr_vals['fl_per_volumes'].append(fl_per_volume)
 
             if midline:
                 # add the midline average by first applying morphology transform
@@ -6145,9 +6278,17 @@ def find_cell_intensities(fov_id, peak_id, Cells, midline=False, channel_name='s
                 # med_mask[med_dist < np.floor(cap_radius/2)] = 0
                 # print(img_fluo[med_mask])
                 if (np.shape(fl_image_masked[med_mask])[0] > 0):
-                    Cell.mid_fl.append(np.nanmean(fl_image_masked[med_mask]))
+                    fl_midline = np.nanmean(fl_image_masked[med_mask])
                 else:
-                    Cell.mid_fl.append(0)
+                    fl_midline = 0
+                attr_vals['fl_midlines'].append(fl_midline)
+        # end loop on times
+        for attr in newattrs:
+            aval = getattr(Cell, attr)  # it is a dictionary with keys being the channels
+            aval[color] = attr_vals[attr]   # value associated to a specific color is now a list of values
+            setattr(Cell, attr, aval)
+    # end of loop on cells
+
 
     # The cell objects in the original dictionary will be updated,
     # no need to return anything specifically.
@@ -6294,6 +6435,36 @@ def foci_cell(cell_id, cell, t0, image_data_seg, image_data_FL):
     cell.disp_l = disp_l
     cell.disp_w = disp_w
     cell.foci_h = foci_h
+# actual worker function for foci detection
+
+def foci_analysis_pool(fov_id, peak_id, Cells, nproc=2):
+    '''Find foci in cells using a fluorescent image channel.
+    This function works on a single peak and all the cells therein.'''
+
+    # make directory for foci debug
+    # foci_dir = os.path.join(params['ana_dir'], 'overlay/')
+    # if not os.path.exists(foci_dir):
+    #     os.makedirs(foci_dir)
+
+    # Import segmented and fluorescenct images
+    image_data_seg = load_stack(fov_id, peak_id, color='seg')
+    image_data_FL = load_stack(fov_id, peak_id,
+                               color='sub_{}'.format(params['foci_plane']))
+
+    # Load time table to determine first image index.
+    time_table_path = os.path.join(params['ana_dir'], 'time_table.pkl')
+    with open(time_table_path, 'r') as fin:
+        time_table = pickle.load(fin)
+    times_all = np.array(np.sort(time_table[fov_id].keys()), np.int_)
+    t0 = times_all[0] # first time index
+    tN = times_all[-1] # last time index
+
+    # call foci_cell for each cell object
+    #pool = Pool(processes=params['num_analyzers'])
+    pool = Pool(nproc)
+    [pool.apply_async(foci_cell(cell_id, cell, t0, image_data_seg, image_data_FL)) for cell_id, cell in Cells.items()]
+    pool.close()
+    pool.join()
 
 # actual worker function for foci detection
 def foci_lap(img, img_foci, cell, t):
@@ -6983,6 +7154,149 @@ def update_cell_foci(cells, foci):
 
             cell_id = cell.id
             cells[cell_id].foci[focus_id] = focus
+
+def foci_lap_peak(img, img_foci, fov_id, peak_id, t):
+    # define parameters for foci finding
+    minsig = params['foci_log_minsig']
+    maxsig = params['foci_log_maxsig']
+    thresh = params['foci_log_thresh']
+    peak_med_ratio = params['foci_log_peak_med_ratio']
+
+    # test
+    #print ("minsig={:d}  maxsig={:d}  thres={:.4g}  peak_med_ratio={:.2g}".format(minsig,maxsig,thresh,peak_med_ratio))
+    # test
+
+    # calculate median cell intensity. Used to filter foci
+    img_foci_masked = np.copy(img_foci).astype(np.float)
+    fl_median = np.nanmedian(img_foci_masked)
+    fl_mean = np.nanmean(img_foci_masked)
+
+    # subtract this value from the cell
+    if False:
+        img_foci = img_foci.astype('int32') - fl_median.astype('int32')
+        img_foci[img_foci < 0] = 0
+        img_foci = img_foci.astype('uint16')
+
+    # int_mask = np.zeros(img_foci.shape, np.uint8)
+    # avg_int = cv2.mean(img_foci, mask=int_mask)
+    # avg_int = avg_int[0]
+
+    # find blobs using difference of gaussian
+    over_lap = .95 # if two blobs overlap by more than this fraction, smaller blob is cut
+    numsig = (maxsig - minsig + 1) # number of division to consider between min ang max sig
+    blobs = blob_log(img_foci, min_sigma=minsig, max_sigma=maxsig,
+                     overlap=over_lap, num_sigma=numsig, threshold=thresh)
+
+    # these will hold information about foci position temporarily
+    x_blob, y_blob, r_blob = [], [], []
+    x_gaus, y_gaus, w_gaus = [], [], []
+
+    # loop through each potential foci
+    for blob in blobs:
+        yloc, xloc, sig = blob # x location, y location, and sigma of gaus
+        xloc = int(xloc) # switch to int for slicing images
+        yloc = int(yloc)
+        radius = int(np.ceil(np.sqrt(2)*sig)) # will be used to slice out area around foci
+
+
+        x_blob.append(xloc) # for plotting
+        y_blob.append(yloc) # for plotting
+        r_blob.append(radius)
+
+        # cut out a small image from original image to fit gaussian
+        gfit_area = img_foci[yloc-radius:yloc+radius, xloc-radius:xloc+radius]
+        # gfit_area_0 = img_foci[max(0, yloc-1*radius):min(img_foci.shape[0], yloc+1*radius),
+        #                        max(0, xloc-1*radius):min(img_foci.shape[1], xloc+1*radius)]
+
+        # fit gaussian to proposed foci in small box
+        p = fitgaussian(gfit_area)
+        (peak_fit, x_fit, y_fit, w_fit) = p
+
+        # print('peak', peak_fit)
+        if x_fit <= 0 or x_fit >= radius*2 or y_fit <= 0 or y_fit >= radius*2:
+            if params['debug_foci']: print('Throw out foci (gaus fit not in gfit_area)')
+            continue
+        elif peak_fit/fl_median < peak_med_ratio:
+            if params['debug_foci']: print('Peak does not pass height test.')
+            continue
+        else:
+            # find x and y position relative to the whole image (convert from small box)
+            x_rel = int(xloc - radius + x_fit)
+            y_rel = int(yloc - radius + y_fit)
+            x_gaus = np.append(x_gaus, x_rel) # for plotting
+            y_gaus = np.append(y_gaus, y_rel) # for plotting
+            w_gaus = np.append(w_gaus, w_fit) # for plotting
+
+    # draw foci on image for quality control
+    if params['debug_foci']:
+        outputdir = os.path.join(params['ana_dir'], 'debug_foci')
+        if not os.path.isdir(outputdir):
+            os.makedirs(outputdir)
+
+        # print(np.min(gfit_area), np.max(gfit_area), gfit_median, avg_int, peak)
+        # processing of image
+        fig = plt.figure(figsize=(12,12))
+        ax = fig.add_subplot(1,5,1)
+        plt.title('fluor image')
+        plt.imshow(img_foci, interpolation='nearest', cmap='gray')
+        ax = fig.add_subplot(1,5,2)
+        ax.set_title('segmented image')
+        ax.imshow(img, interpolation='nearest', cmap='gray')
+
+        ax = fig.add_subplot(1,5,3)
+        ax.set_title('DoG blobs')
+        ax.imshow(img_foci, interpolation='nearest', cmap='gray')
+        # add circles for where the blobs are
+        for i, spot in enumerate(x_blob):
+            foci_center = Ellipse([x_blob[i], y_blob[i]], r_blob[i], r_blob[i],
+                                  color=(1.0, 1.0, 0), linewidth=2, fill=False, alpha=0.5)
+            ax.add_patch(foci_center)
+
+        # show the shape of the gaussian for recorded foci
+        ax = fig.add_subplot(1,5,4)
+        ax.set_title('final foci')
+        ax.imshow(img_foci, interpolation='nearest', cmap='gray')
+        # print foci that pass and had gaussians fit
+        for i, spot in enumerate(x_gaus):
+            foci_ellipse = Ellipse([x_gaus[i], y_gaus[i]], w_gaus[i], w_gaus[i],
+                                    color=(0, 1.0, 0.0), linewidth=2, fill=False, alpha=0.5)
+            ax.add_patch(foci_ellipse)
+
+        ax = fig.add_subplot(1,5,5)
+        ax.set_title('overlay')
+        ax.imshow(img, interpolation='nearest', cmap='gray')
+        # print foci that pass and had gaussians fit
+        for i, spot in enumerate(x_gaus):
+            foci_ellipse = Ellipse([x_gaus[i], y_gaus[i]], 3, 3,
+                                    color=(1.0, 1.0, 0), linewidth=2, fill=False, alpha=0.5)
+            ax.add_patch(foci_ellipse)
+
+        #plt.show()
+        filename = 'foci_f{:03d}p{:04d}t{:04d}.pdf'.format(fov_id,peak_id,t)
+        fileout = os.path.join(outputdir,filename)
+        fig.tight_layout()
+        fig.savefig(fileout, bbox_inches='tight', pad_inches=0)
+        print (fileout)
+        plt.close('all')
+        nblobs = len(blobs)
+        print ("nblobs = {:d}".format(nblobs))
+
+    # img_overlay = img
+    # for i, spot in enumerate(xx):
+    #     y_temp = int(yy[i])
+    #     x_temp = int(xx[i])
+    #
+    #     img_overlay[y_temp-1,x_temp-1] = 12
+    #     img_overlay[y_temp-1,x_temp] = 12
+    #     img_overlay[y_temp-1,x_temp+1] = 12
+    #     img_overlay[y_temp,x_temp-1] = 12
+    #     img_overlay[y_temp,x_temp] = 12
+    #     img_overlay[y_temp,x_temp+1] = 12
+    #     img_overlay[y_temp+1,x_temp-1] = 12
+    #     img_overlay[y_temp+1,x_temp] = 12
+    #     img_overlay[y_temp+1,x_temp+1] = 12
+
+    return
 
 # finds best fit for 2d gaussian using functin above
 def fitgaussian(data):
