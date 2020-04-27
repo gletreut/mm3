@@ -1,5 +1,6 @@
-#!/usr/bin/python
-from __future__ import print_function
+#!/usr/bin/env python3
+from __future__ import print_function, division
+import six
 
 # import modules
 import sys
@@ -54,7 +55,6 @@ if __name__ == "__main__":
     else:
         mm3.warning('No param file specified. Using 100X template.')
         param_file_path = 'yaml_templates/params_SJ110_100X.yaml'
-
     p = mm3.init_mm3_helpers(param_file_path) # initialized the helper library
 
     # create segmenteation and cell data folder if they don't exist
@@ -62,6 +62,9 @@ if __name__ == "__main__":
         os.makedirs(p['seg_dir'])
     if not os.path.exists(p['cell_dir']):
         os.makedirs(p['cell_dir'])
+
+    # set segmentation image name for saving and loading segmented images
+    p['seg_img'] = 'seg_otsu'
 
     # load specs file
     try:
