@@ -756,7 +756,7 @@ def plot_queen_distribution(data, outputdir='.', attrdict={'fl_px_med_med_405ex'
 
     return
 
-def plot_queen_time(data, offsets=None, outputdir='.', attrdict={'fl_px_med_med_405ex':{},'fl_px_med_med_488ex':{}}, attrs=['fl_px_med_med_405ex','fl_px_med_med_488ex'], backgrounds=None, time_mode=None, scatter_max_pts=1000, lw=0.5, ms=1, labels=None, colors=None, bin_width=None, xlos=None, xhis=None, tlo=None, thi=None, aratio=4./3, units_dx=None, unit_dt=None, unit_dn=None, xformat='{:<.2f}', tformat='{:<.2f}', xlims=None):
+def plot_queen_time(data, offsets=None, outputdir='.', attrdict={'fl_px_med_med_405ex':{},'fl_px_med_med_488ex':{}}, attrs=['fl_px_med_med_405ex','fl_px_med_med_488ex'], backgrounds=None, time_mode=None, scatter_max_pts=1000, lw=0.5, ms=1, labels=None, colors=None, bin_width=None, xlos=None, xhis=None, tlo=None, thi=None, aratio=4./3, units_dx=None, unit_dt=None, unit_dn=None, xformat='{:<.2f}', tformat='{:<.2f}', xlims=None, logscale=False):
     """
     Plot overlay of QUEEN signal time traces
 
@@ -1058,6 +1058,10 @@ def plot_queen_time(data, offsets=None, outputdir='.', attrdict={'fl_px_med_med_
         ax.spines['left'].set_smart_bounds(True)
         ax.spines['bottom'].set_smart_bounds(True)
         ax.tick_params(axis='both', labelsize='medium', length=4, bottom=False, labelbottom=False)
+
+        if logscale:
+            ax.set_yscale('log')
+            ax.set_ylim(None,None)
     # end loop on axes
 
     # cell count axes
@@ -1090,10 +1094,12 @@ def plot_queen_time(data, offsets=None, outputdir='.', attrdict={'fl_px_med_med_
         if label is None:
             label = "{:d}".format(n)
 
-        patch = mpatches.Patch(color=color, label=label)
+        #patch = mpatches.Patch(color=color, label=label)
+        patch = mpatches.Patch(color=color)
         patches.append(patch)
     #axes[2].add_artist(plt.legend(handles=patches, loc='upper right'))
-    plt.figlegend(handles=patches, fontsize='x-small', mode='expand', ncol=ndata,borderaxespad=0, borderpad=0, loc='lower center', frameon=False)
+    #plt.figlegend(handles=patches, fontsize='x-small', mode='expand', ncol=ndata,borderaxespad=0, borderpad=0, loc='lower center', frameon=False)
+    plt.figlegend(handles=patches, labels=labels, fontsize='x-small', mode='expand', ncol=ndata,borderaxespad=0, borderpad=0, loc='lower center', frameon=False)
 
     ## last configurations
     rect = [0.,0.,1.,1.]
