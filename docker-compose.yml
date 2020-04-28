@@ -1,0 +1,14 @@
+---
+version: '3'
+services:
+  mm3:
+    image: mm3
+    build:
+       context: "./mm3"
+       dockerfile: "./docker/mm3-py3-dcompose/Dockerfile"
+    container_name: mm3
+    ports:
+      - "9999:8888"
+    volumes:
+      - ".:/user"
+    command: jupyter lab --no-browser --ip 0.0.0.0 --allow-root

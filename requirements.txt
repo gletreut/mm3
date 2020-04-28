@@ -1,0 +1,14 @@
+numpy
+scipy
+matplotlib
+seaborn
+Pillow
+scikit-image
+pyYAML
+pandas
+pims_nd2
+sklearn
+freetype-py
+tifffile
+#PyQt5
+
