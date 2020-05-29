@@ -12,6 +12,7 @@ import glob
 import math
 import copy
 import json
+from pathlib import Path
 try:
     import cPickle as pickle
 except:
@@ -52,7 +53,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(prog='python mm3_nd2ToTIFF.py', description='Converter .nd2 -> TIFFs.')
     parser.add_argument('nd2files',  type=str, nargs='+',
                         help='.nd2 files')
-    parser.add_argument('-f', '--paramfile',  type=file,
+    parser.add_argument('-f', '--paramfile',  type=str,
                         required=True, help='Yaml file containing parameters.')
     parser.add_argument('-d', '--outputdir',  type=str,
                         required=False, default='.', help='Yaml file containing parameters.')
@@ -60,11 +61,11 @@ if __name__ == "__main__":
 
     # Load the project parameters file
     mm3.information('Loading experiment parameters.')
-    if namespace.paramfile.name:
-        param_file_path = namespace.paramfile.name
+    if namespace.paramfile:
+        param_file_path = Path(namespace.paramfile)
     else:
         mm3.warning('No param file specified. Using 100X template.')
-        param_file_path = 'yaml_templates/params_SJ110_100X.yaml'
+        param_file_path = Path('yaml_templates/params_SJ110_100X.yaml')
 
     # output directory
     outputdir=namespace.outputdir
@@ -73,7 +74,7 @@ if __name__ == "__main__":
         print("Making directory {:s}".format(outputdir))
 
     # init parameters
-    p = mm3.init_mm3_helpers(param_file_path, experiment_directory=outputdir) # initialized the helper library
+    p = mm3.init_mm3_helpers(str(param_file_path), experiment_directory=outputdir) # initialized the helper library
 
     # fovs
     fovs = None
@@ -132,7 +133,7 @@ if __name__ == "__main__":
             # it is zero indexed to grab from nd2, but TIFF naming starts at 1.
             # if there is more than one FOV (len(nd2f) != 1), make sure the user input
             # last time index is before the actual time index. Ignore it.
-            if (p['nd2ToTIFF']['image_start'] < 1):
+            if (p['nd2ToTIFF']['image_start'] is None) or (p['nd2ToTIFF']['image_start'] < 1):
                 p['nd2ToTIFF']['image_start'] = 1
             if p['nd2ToTIFF']['image_end']:
                 if (len(nd2f) > 0) and (len(nd2f) < p['nd2ToTIFF']['image_end']):
