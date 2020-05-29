@@ -1,0 +1,3 @@
+libgomp1
+qttools5-dev-tools
+
