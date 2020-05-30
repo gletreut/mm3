@@ -292,7 +292,7 @@ def get_tif_params(image_filename, find_channels=True):
         information('Analyzed %s' % image_filename)
 
         # return the file name, the data for the channels in that image, and the metadata
-        return {'filepath': os.path.join(params['TIFF_dir'],image_filename),
+        mydict = {'filepath': os.path.join(params['TIFF_dir'],image_filename),
                 'fov' : image_metadata['fov'], # fov id
                 't' : image_metadata['t'], # time point
                 'jd' : image_metadata['jd'], # absolute julian time
@@ -301,6 +301,7 @@ def get_tif_params(image_filename, find_channels=True):
                 'planes' : image_metadata['planes'], # list of plane names
                 'shape' : img_shape, # image shape x y in pixels
                 'channels' : chnl_loc_dict} # dictionary of channel locations
+        return mydict
 
     except:
         warning('Failed get_params for ' + image_filename.split("/")[-1])
@@ -442,10 +443,11 @@ def get_tif_metadata_nd2ToTIFF(tif):
     mm3_Compile.get_tif_params
 
     '''
-    # get the first page of the tiff and pull out image description
-    # this dictionary should be in the above form
-    idata = tif[0].image_description
-    idata = json.loads(idata.decode('utf-8'))
+#    # get the first page of the tiff and pull out image description
+#    # this dictionary should be in the above form
+#    print(vars(tif))
+    idata = tif.pages[0].description
+    idata = json.loads(idata)
 
     return idata
 
@@ -546,7 +548,7 @@ def tiff_stack_slice_and_write(images_to_write, channel_masks, analyzed_imgs):
     image_fov_stack = np.stack(image_fov_stack, axis=0)
 
     # cut out the channels as per channel masks for this fov
-    for peak, channel_loc in channel_masks[fov_id].iteritems():
+    for peak, channel_loc in channel_masks[fov_id].items():
         #information('Slicing and saving channel peak %s.' % channel_filename.split('/')[-1])
         information('Slicing and saving channel peak %d.' % peak)
 
@@ -650,7 +652,7 @@ def hdf5_stack_slice_and_write(images_to_write, channel_masks, analyzed_imgs):
                                   compression="gzip", shuffle=True, fletcher32=True)
 
         # cut out the channels as per channel masks for this fov
-        for peak, channel_loc in channel_masks[fov_id].iteritems():
+        for peak, channel_loc in channel_masks[fov_id].items():
             #information('Slicing and saving channel peak %s.' % channel_filename.split('/')[-1])
             information('Slicing and saving channel peak %d.' % peak)
 
@@ -796,15 +798,15 @@ def make_masks(analyzed_imgs):
 
     """ test 20180521 - start
     # get the size of the images (hope they are the same)
-    for img_k, img_v in analyzed_imgs.iteritems():
+    for img_k, img_v in analyzed_imgs.items():
         image_rows = img_v['shape'][0] # x pixels
         image_cols = img_v['shape'][1] # y pixels
-        break # just need one. using iteritems mean the whole dict doesn't load
+        break # just need one. using items mean the whole dict doesn't load
     # test 20180521 - end """
 
     # get the fov ids
     fovs = []
-    for img_k, img_v in analyzed_imgs.iteritems():
+    for img_k, img_v in analyzed_imgs.items():
         if img_v['fov'] not in fovs:
             fovs.append(img_v['fov'])
 
@@ -820,7 +822,7 @@ def make_masks(analyzed_imgs):
         #consensus_mask = np.zeros([image_rows, image_cols]) # mask for labeling
 
         # bring up information for each image
-        for img_k, img_v in analyzed_imgs.iteritems():
+        for img_k, img_v in analyzed_imgs.items():
             # skip this one if it is not of the current fov
             if img_v['fov'] != fov:
                 continue
@@ -834,7 +836,7 @@ def make_masks(analyzed_imgs):
             img_chnl_mask = np.zeros([image_rows, image_cols])
 
             # and add the channel mask to it
-            for chnl_peak, peak_ends in img_v['channels'].iteritems():
+            for chnl_peak, peak_ends in img_v['channels'].items():
                 # pull out the peak location and top and bottom location
                 # and expand by padding (more padding done later for width)
                 x1 = max(chnl_peak - crop_wp, 0)
@@ -895,9 +897,9 @@ def make_masks(analyzed_imgs):
     # update all channel masks to be the max size
     cm_copy = channel_masks.copy()
 
-    for fov, peaks in channel_masks.iteritems():
+    for fov, peaks in channel_masks.items():
         # f_id = int(fov)
-        for peak, chnl_mask in peaks.iteritems():
+        for peak, chnl_mask in peaks.items():
             # p_id = int(peak)
             # just add length to the open end (top of image, low column)
             if chnl_mask[0][1] - chnl_mask[0][0] !=  max_chnl_mask_len:
@@ -1793,7 +1795,7 @@ def make_lineage_chnl_stack(fov_and_peak_id):
 
             # go through the current leaf regions.
             # limit by the closest two current regions if there are three regions to the leaf
-            for leaf_id, region_links in leaf_region_map.iteritems():
+            for leaf_id, region_links in leaf_region_map.items():
                 if len(region_links) > 2:
                     closest_two_regions = sorted(region_links, key=lambda x: x[1])[:2]
                     # but sort by region order so top region is first
@@ -1815,7 +1817,7 @@ def make_lineage_chnl_stack(fov_and_peak_id):
                             break
 
             ### iterate over the leaves, looking to see what regions connect to them.
-            for leaf_id, region_links in leaf_region_map.iteritems():
+            for leaf_id, region_links in leaf_region_map.items():
 
                 # if there is just one suggested descendant,
                 # see if it checks out and append the data
@@ -2992,8 +2994,8 @@ def ring_analysis(fov_id, peak_id, Cells, ring_plane='c2'):
 
     Usage
     -----
-    for fov_id, peaks in Lineages.iteritems():
-        for peak_id, Cells in peaks.iteritems():
+    for fov_id, peaks in Lineages.items():
+        for peak_id, Cells in peaks.items():
             mm3.ring_analysis(fov_id, peak_id, Cells, ring_plane='sub_c2')
     '''
 

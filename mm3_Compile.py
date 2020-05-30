@@ -20,6 +20,7 @@ from multiprocessing import Pool
 import numpy as np
 import warnings
 import h5py
+from pathlib import Path
 
 # user modules
 # realpath() will make your script run, even if you symlink it
@@ -51,7 +52,7 @@ if __name__ == "__main__":
     # set switches and parameters
     parser = argparse.ArgumentParser(prog='python mm3_Compile.py',
                                      description='Identifies and slices out channels into individual TIFF stacks through time.')
-    parser.add_argument('-f', '--paramfile',  type=file,
+    parser.add_argument('-f', '--paramfile',  type=str,
                         required=True, help='Yaml file containing parameters.')
     parser.add_argument('-d', '--outputdir',  type=str,
                         required=False, default='.', help='Yaml file containing parameters.')
@@ -67,11 +68,11 @@ if __name__ == "__main__":
 
     # Load the project parameters file
     mm3.information('Loading experiment parameters.')
-    if namespace.paramfile.name:
-        param_file_path = namespace.paramfile.name
+    if namespace.paramfile:
+        param_file_path = Path(namespace.paramfile)
     else:
         mm3.warning('No param file specified. Using 100X template.')
-        param_file_path = 'yaml_templates/params_SJ110_100X.yaml'
+        param_file_path = Path('yaml_templates/params_SJ110_100X.yaml')
 
     # init parameters
     p = mm3.init_mm3_helpers(param_file_path, experiment_directory=outputdir) # initialized the helper library
@@ -156,7 +157,7 @@ if __name__ == "__main__":
             # for each file name. True means look for channels
 
             # This is the non-parallelized version (useful for debug)
-            # analyzed_imgs[fn] = mm3.get_tif_params(fn, True)
+            #analyzed_imgs[fn] = mm3.get_tif_params(fn, True)
 
             # Parallelized
             analyzed_imgs[fn] = pool.apply_async(mm3.get_tif_params, args=(fn, True))
@@ -169,7 +170,7 @@ if __name__ == "__main__":
         mm3.information('Image analyses pool finished, getting results.')
 
         # get results from the pool and put them in a dictionary
-        for fn, result in analyzed_imgs.iteritems():
+        for fn, result in analyzed_imgs.items():
             if result.successful():
                 analyzed_imgs[fn] = result.get() # put the metadata in the dict if it's good
             else:
@@ -243,7 +244,7 @@ if __name__ == "__main__":
         mm3.information("Saving channel slices.")
 
         # do it by FOV. Not set up for multiprocessing
-        for fov, peaks in channel_masks.iteritems():
+        for fov, peaks in channel_masks.items():
 
             # skip fov if not in the group
             if user_spec_fovs and fov not in user_spec_fovs:
