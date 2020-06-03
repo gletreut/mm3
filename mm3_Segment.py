@@ -8,6 +8,7 @@ import time
 import inspect
 import argparse
 import yaml
+from pathlib import Path
 from pprint import pprint # for human readable file output
 try:
     import cPickle as pickle
@@ -38,7 +39,7 @@ if __name__ == "__main__":
     # set switches and parameters
     parser = argparse.ArgumentParser(prog='python mm3_Segment.py',
                                      description='Segment cells and create lineages.')
-    parser.add_argument('-f', '--paramfile',  type=file,
+    parser.add_argument('-f', '--paramfile',  type=str,
                         required=True, help='Yaml file containing parameters.')
     parser.add_argument('-j', '--nproc',  type=int,
                         required=False, help='Number of processors to use.')
@@ -49,15 +50,15 @@ if __name__ == "__main__":
 
     # Load the project parameters file
     mm3.information('Loading experiment parameters.')
-    if namespace.paramfile.name:
-        param_file_path = namespace.paramfile.name
+    if namespace.paramfile:
+        param_file_path = Path(namespace.paramfile)
     else:
         mm3.warning('No param file specified. Using 100X template.')
-        param_file_path = 'yaml_templates/params_SJ110_100X.yaml'
+        param_file_path = Path('yaml_templates/params_SJ110_100X.yaml')
 
     p = mm3.init_mm3_helpers(param_file_path) # initialized the helper library
 
-    # create segmenteation and cell data folder if they don't exist
+    # create segmentation and cell data folder if they don't exist
     if not os.path.exists(p['seg_dir']) and p['output'] == 'TIFF':
         os.makedirs(p['seg_dir'])
     if not os.path.exists(p['cell_dir']):

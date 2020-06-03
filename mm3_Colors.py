@@ -8,6 +8,7 @@ import time
 import inspect
 import argparse
 import yaml
+from pathlib import Path
 from pprint import pprint # for human readable file output
 try:
     import cPickle as pickle
@@ -47,9 +48,9 @@ if __name__ == "__main__":
     # set switches and parameters
     parser = argparse.ArgumentParser(prog='python mm3_Colors.py',
                                      description='Calculates total and average fluorescence per cell.')
-    parser.add_argument('-f', '--paramfile', type=file,
+    parser.add_argument('-f', '--paramfile', type=str,
                         required=True, help='Yaml file containing parameters.')
-    parser.add_argument('-c', '--cellfile', type=file,
+    parser.add_argument('-c', '--cellfile', type=str,
                         required=False, help='Path to Cell object dicionary to analyze. Defaults to complete_cells.pkl.')
     parser.add_argument('-l', '--colors',  type=str, nargs='*',
                         required=False, default=None, help='Color channels')
@@ -57,11 +58,12 @@ if __name__ == "__main__":
 
     # Load the project parameters file
     mm3.information('Loading experiment parameters.')
-    if namespace.paramfile.name:
-        param_file_path = namespace.paramfile.name
+    if namespace.paramfile:
+        param_file_path = Path(namespace.paramfile)
     else:
         mm3.warning('No param file specified. Using 100X template.')
-        param_file_path = 'yaml_templates/params_SJ110_100X.yaml'
+        param_file_path = Path('yaml_templates/params_SJ110_100X.yaml')
+
     p = mm3.init_mm3_helpers(param_file_path) # initialized the helper library
 
     # which color channel with which to do subtraction
@@ -77,13 +79,13 @@ if __name__ == "__main__":
 
     # load cell file
     mm3.information('Loading cell data.')
-    if namespace.cellfile:
-        cell_file_path = namespace.cellfile.name
+    if namespace.paramfile:
+        cell_file_path = Path(namespace.cellfile)
     else:
         mm3.warning('No cell file specified. Using complete_cells.pkl.')
-        cell_file_path = os.path.join(p['cell_dir'], 'complete_cells.pkl')
+        cell_file_path = Path(os.path.join(p['cell_dir'], 'complete_cells.pkl'))
 
-    with open(cell_file_path, 'r') as cell_file:
+    with open(cell_file_path, 'rb') as cell_file:
         Complete_Cells = pickle.load(cell_file)
 
     # load specs file
@@ -122,7 +124,7 @@ if __name__ == "__main__":
                 mm3.information('Processing FOV {:d} / Peak {:d}.'.format(fov_id, peak_id))
                 for color in colors:
                     mm3.find_cell_intensities(fov_id, peak_id, Cells, midline=False, color=color)
-                    mycell = Cells.values()[0]
+                    mycell = list(Cells.values())[0]
 #                print(vars(mycell).keys())
 #                print("volumes", mycell.volumes)
 #                print("areas", mycell.areas)

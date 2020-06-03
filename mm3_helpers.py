@@ -8,10 +8,8 @@ import datetime
 import inspect # get passed parameters
 import yaml # parameter importing
 import json # for importing tiff metadata
-try:
-    import cPickle as pickle # loading and saving python objects
-except:
-    import pickle
+import pickle
+from pathlib import Path
 import numpy as np # numbers package
 import struct # for interpretting strings as binary data
 import re # regular expressions
@@ -495,7 +493,7 @@ def load_time_table():
     This is so it can be used during Cell creation.
     '''
 
-    with open(os.path.join(params['ana_dir'], 'time_table.pkl'), 'r') as time_table_file:
+    with open(os.path.join(params['ana_dir'], 'time_table.pkl'), 'rb') as time_table_file:
         params['time_table'] = pickle.load(time_table_file)
 
     return
@@ -1475,20 +1473,20 @@ def segment_chnl_stack(fov_id, peak_id,nproc=2):
     # load subtracted images
     sub_stack = load_stack(fov_id, peak_id, color='sub_{}'.format(params['phase_plane']))
 
-#    # set up multiprocessing pool to do segmentation. Will do everything before going on.
-#    #pool = Pool(processes=params['num_analyzers'])
-#    pool = Pool(nproc)
+    # set up multiprocessing pool to do segmentation. Will do everything before going on.
+    #pool = Pool(processes=params['num_analyzers'])
+    pool = Pool(nproc)
+
+    # send the 3d array to multiprocessing
+    segmented_imgs = pool.map(segment_image, sub_stack, chunksize=8)
 #
-#    # send the 3d array to multiprocessing
-#    segmented_imgs = pool.map(segment_image, sub_stack, chunksize=8)
-#
-#    pool.close() # tells the process nothing more will be added.
-#    pool.join() # blocks script until everything has been processed and workers exit
+    pool.close() # tells the process nothing more will be added.
+    pool.join() # blocks script until everything has been processed and workers exit
 
     # image by image for debug
-    segmented_imgs = []
-    for sub_image in sub_stack:
-        segmented_imgs.append(segment_image(sub_image))
+#    segmented_imgs = []
+#    for sub_image in sub_stack:
+#        segmented_imgs.append(segment_image(sub_image))
 
     # stack them up along a time axis
     segmented_imgs = np.stack(segmented_imgs, axis=0)
@@ -1679,7 +1677,6 @@ def make_lineages_fov(fov_id, specs,nproc=2):
     fov_and_peak_ids_list = [(fov_id, peak_id) for peak_id in ana_peak_ids]
 
     # set up multiprocessing pool. will complete pool before going on
-    #pool = Pool(processes=params['num_analyzers'])
     pool = Pool(nproc)
 
     # create the lineages for each peak individually
@@ -1690,9 +1687,10 @@ def make_lineages_fov(fov_id, specs,nproc=2):
     pool.join() # blocks script until everything has been processed and workers exit
 
     # This is the non-parallelized version (useful for debug)
-    # for fov_and_peak_ids in fov_and_peak_ids_list:
-    #     lineages = make_lineage_chnl_stack(fov_and_peak_ids)
-
+#    lineages = []
+#    for fov_and_peak_ids in fov_and_peak_ids_list:
+#        lineages.append(make_lineage_chnl_stack(fov_and_peak_ids))
+#
     # combine all dictionaries into one dictionary
     Cells = {} # create dictionary to hold all information
     for cell_dict in lineages: # for all the other dictionaries in the list
@@ -2086,16 +2084,16 @@ def feretdiameter(region):
     region_binimg = np.pad(region.image, 1, 'constant') # pad region binary image by 1 to avoid boundary non-zero pixels
     distance_image = ndi.distance_transform_edt(region_binimg)
     r_coords = np.where(distance_image == 1)
-    r_coords = zip(r_coords[0], r_coords[1])
+    r_coords = np.array(r_coords).T
 
     # coordinates are already sorted by y. partion into top and bottom to search faster later
     # if orientation > 0, L1 is closer to top of image (lower Y coord)
     if region.orientation > 0:
-        L1_coords = r_coords[:len(r_coords)/4]
-        L2_coords = r_coords[len(r_coords)/4:]
+        L1_coords = r_coords[:len(r_coords)//4]
+        L2_coords = r_coords[len(r_coords)//4:]
     else:
-        L1_coords = r_coords[len(r_coords)/4:]
-        L2_coords = r_coords[:len(r_coords)/4]
+        L1_coords = r_coords[len(r_coords)//4:]
+        L2_coords = r_coords[:len(r_coords)//4]
 
     #####################
     # calculte cell length
@@ -2127,11 +2125,11 @@ def feretdiameter(region):
     # limit to points in each half
     W_coords = []
     if region.orientation > 0:
-        W_coords.append(r_coords[:len(r_coords)/2]) # note the /2 here instead of /4
-        W_coords.append(r_coords[len(r_coords)/2:])
+        W_coords.append(r_coords[:len(r_coords)//2]) # note the /2 here instead of /4
+        W_coords.append(r_coords[len(r_coords)//2:])
     else:
-        W_coords.append(r_coords[len(r_coords)/2:])
-        W_coords.append(r_coords[:len(r_coords)/2])
+        W_coords.append(r_coords[len(r_coords)//2:])
+        W_coords.append(r_coords[:len(r_coords)//2])
 
     # starting points
     x1 = x0 + cosorient * 0.5 * length*0.4
@@ -2331,11 +2329,11 @@ def find_cell_intensities(fov_id, peak_id, Cells, midline=False, color='c1'):
 
     # determine absolute time index
     time_table_path = os.path.join(params['ana_dir'],'time_table.pkl')
-    with open(time_table_path,'r') as fin:
+    with open(time_table_path,'rb') as fin:
         time_table = pickle.load(fin)
     times_all = []
     for fov in time_table:
-        times_all = np.append(times_all, time_table[fov].keys())
+        times_all = np.append(times_all, list(time_table[fov].keys()))
     times_all = np.unique(times_all)
     times_all = np.sort(times_all)
     times_all = np.array(times_all,np.int_)
@@ -2425,7 +2423,7 @@ def foci_analysis(fov_id, peak_id, Cells):
 
     # Load time table to determine first image index.
     time_table_path = os.path.join(params['ana_dir'], 'time_table.pkl')
-    with open(time_table_path, 'r') as fin:
+    with open(time_table_path, 'rb') as fin:
         time_table = pickle.load(fin)
     times_all = np.array(np.sort(time_table[fov_id].keys()), np.int_)
     t0 = times_all[0] # first time index
@@ -2502,7 +2500,7 @@ def foci_analysis_pool(fov_id, peak_id, Cells):
 
     # Load time table to determine first image index.
     time_table_path = os.path.join(params['ana_dir'], 'time_table.pkl')
-    with open(time_table_path, 'r') as fin:
+    with open(time_table_path, 'rb') as fin:
         time_table = pickle.load(fin)
     times_all = np.array(np.sort(time_table[fov_id].keys()), np.int_)
     t0 = times_all[0] # first time index
@@ -2569,7 +2567,7 @@ def foci_analysis_pool(fov_id, peak_id, Cells, nproc=2):
 
     # Load time table to determine first image index.
     time_table_path = os.path.join(params['ana_dir'], 'time_table.pkl')
-    with open(time_table_path, 'r') as fin:
+    with open(time_table_path, 'rb') as fin:
         time_table = pickle.load(fin)
     times_all = np.array(np.sort(time_table[fov_id].keys()), np.int_)
     t0 = times_all[0] # first time index
@@ -3007,7 +3005,7 @@ def ring_analysis(fov_id, peak_id, Cells, ring_plane='c2'):
 
     # Load time table to determine first image index.
     time_table_path = os.path.join(params['ana_dir'], 'time_table.pkl')
-    with open(time_table_path, 'r') as fin:
+    with open(time_table_path, 'rb') as fin:
         time_table = pickle.load(fin)
     times_all = np.array(np.sort(time_table[fov_id].keys()), np.int_)
     t0 = times_all[0] # first time index
@@ -3109,7 +3107,7 @@ def profile_analysis(fov_id, peak_id, Cells, profile_plane='c2'):
 
     # Load time table to determine first image index.
     time_table_path = os.path.join(params['ana_dir'], 'time_table.pkl')
-    with open(time_table_path, 'r') as fin:
+    with open(time_table_path, 'rb') as fin:
         time_table = pickle.load(fin)
     times_all = np.array(np.sort(time_table[fov_id].keys()), np.int_)
     t0 = times_all[0] # first time index
@@ -3183,7 +3181,7 @@ def x_profile_analysis(fov_id, peak_id, Cells, profile_plane='sub_c2'):
 
     # Load time table to determine first image index.
     time_table_path = os.path.join(params['ana_dir'], 'time_table.pkl')
-    with open(time_table_path, 'r') as fin:
+    with open(time_table_path, 'rb') as fin:
         time_table = pickle.load(fin)
     times_all = np.array(np.sort(time_table[fov_id].keys()), np.int_)
     t0 = times_all[0] # first time index
@@ -3287,7 +3285,7 @@ def constriction_analysis(fov_id, peak_id, Cells, plane='sub_c1'):
 
     # Load time table to determine first image index.
     time_table_path = os.path.join(params['ana_dir'], 'time_table.pkl')
-    with open(time_table_path, 'r') as fin:
+    with open(time_table_path, 'rb') as fin:
         time_table = pickle.load(fin)
     times_all = np.array(np.sort(time_table[fov_id].keys()), np.int_)
     t0 = times_all[0] # first time index

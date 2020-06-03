@@ -11,10 +11,7 @@ import yaml
 import glob
 import re
 from pprint import pprint # for human readable file output
-try:
-    import cPickle as pickle
-except:
-    import pickle
+import pickle
 import multiprocessing
 from multiprocessing import Pool
 import numpy as np

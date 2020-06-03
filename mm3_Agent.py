@@ -117,7 +117,7 @@ def process_FOV_images(fov_id, filenames, channel_masks, specs):
     # slice out different channels
     mm3.information('Slicing channels for FOV %d' % fov_id)
     channel_stacks = {} # dictionary with keys as peak_id, values as image stacks
-    for peak_id, channel_loc in channel_masks[fov_id].iteritems():
+    for peak_id, channel_loc in channel_masks[fov_id].items():
         # slice out channel and put in dictionary
         channel_stacks[peak_id] = mm3.cut_slice(image_fov_stack, channel_loc)
 
@@ -328,7 +328,7 @@ if __name__ == "__main__":
         #         process_results[fov_id] = process_FOV_images(fov_id, filenames, channel_masks, specs)
 
         # move the analyzed files, if the results were successful, to the analyzed list.
-        for fov_id, result in process_results.iteritems():
+        for fov_id, result in process_results.items():
             # if result was good, add files to known files and remove them from unknown files
             if result.successful():
                 mm3.information('Processing successful for FOV %d.' % fov_id)

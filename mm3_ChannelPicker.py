@@ -9,10 +9,7 @@ import inspect
 import argparse
 import yaml
 from pprint import pprint # for human readable file output
-try:
-    import cPickle as pickle
-except:
-    import pickle
+import pickle
 import numpy as np
 import matplotlib as mpl
 # mpl.use('Agg')
@@ -24,11 +21,11 @@ from matplotlib.figure import figaspect
 plt.rcParams['axes.linewidth']=0.5
 
 from skimage.exposure import rescale_intensity # for displaying in GUI
-from scipy.misc import imresize
 import multiprocessing
 from multiprocessing import Pool
 import warnings
 import h5py
+from pathlib import Path
 
 # user modules
 # realpath() will make your script run, even if you symlink it
@@ -325,10 +322,10 @@ def preload_images(specs, fov_id_list):
             UI_images[fov_id][peak_id] = {'first' : None, 'last' : None} # init dictionary
              # phase image at t=0. Rescale intenstiy and also cut the size in half
             first_image = p['channel_picker']['first_image']
-            UI_images[fov_id][peak_id]['first'] = imresize(image_data[first_image,:,:], 0.5)
+            UI_images[fov_id][peak_id]['first'] = image_data[first_image,::2,::2]
             last_image = p['channel_picker']['last_image']
             # phase image at end
-            UI_images[fov_id][peak_id]['last'] = imresize(image_data[last_image,:,:], 0.5)
+            UI_images[fov_id][peak_id]['last'] = image_data[last_image,::2,::2]
 
     return UI_images
 
@@ -340,19 +337,17 @@ if __name__ == "__main__":
     # set switches and parameters
     parser = argparse.ArgumentParser(prog='python mm3_ChannelPicker.py',
                                      description='Determines which channels should be analyzed, used as empties for subtraction, or ignored.')
-    parser.add_argument('-f', '--paramfile', type=file,
+    parser.add_argument('-f', '--paramfile', type=str,
                         required=True, help='Yaml file containing parameters.')
     parser.add_argument('-j', '--nproc',  type=int,
                         required=False, help='Number of processors to use.')
-    # parser.add_argument('-s', '--specfile',  type=file,
-    #                     required=False, help='Filename of specs file.')
     parser.add_argument('-i', '--noninteractive', action='store_true',
                         required=False, help='Do channel picking manually.')
     parser.add_argument('-d', '--outputdir',  type=str,
                         required=False, default='.', help='Output directory (tree root).')
     parser.add_argument('-c', '--saved_cross_correlations', action='store_true',
                         required=False, help='Load cross correlation data instead of computing.')
-    parser.add_argument('-s', '--specfile', type=file,
+    parser.add_argument('-s', '--specfile', type=str,
                         required=False, help='Path to spec.yaml file.')
     namespace = parser.parse_args()
 
@@ -364,11 +359,11 @@ if __name__ == "__main__":
 
     # Load the project parameters file
     mm3.information('Loading experiment parameters.')
-    if namespace.paramfile.name:
-        param_file_path = namespace.paramfile.name
+    if namespace.paramfile:
+        param_file_path = Path(namespace.paramfile)
     else:
         mm3.warning('No param file specified. Using 100X template.')
-        param_file_path = 'yaml_templates/params_SJ110_100X.yaml'
+        param_file_path = Path('yaml_templates/params_SJ110_100X.yaml')
 
     # init parameters
     p = mm3.init_mm3_helpers(param_file_path, experiment_directory=outputdir) # initialized the helper library
@@ -390,8 +385,8 @@ if __name__ == "__main__":
     # use previous specfile
     if namespace.specfile:
         try:
-            specfile = os.path.relpath(namespace.specfile.name)
-            if not os.path.isfile(specfile):
+            specfile = Path(namespace.specfile)
+            if not specfile.is_file():
                 raise ValueError
         except ValueError:
             mm3.warning("\"{}\" is not a regular file or does not exist".format(specfile))
@@ -418,7 +413,7 @@ if __name__ == "__main__":
 
     # load channel masks
     try:
-        with open(os.path.join(ana_dir,'channel_masks.pkl'), 'r') as cmask_file:
+        with open(os.path.join(ana_dir,'channel_masks.pkl'), 'rb') as cmask_file:
             channel_masks = pickle.load(cmask_file)
     except:
         mm3.warning('Could not load channel mask file.')
@@ -439,7 +434,7 @@ if __name__ == "__main__":
         mm3.information('Loading precalculated cross-correlations.')
 
         try:
-            with open(os.path.join(ana_dir,'crosscorrs.pkl'), 'r') as xcorrs_file:
+            with open(os.path.join(ana_dir,'crosscorrs.pkl'), 'rb') as xcorrs_file:
                 crosscorrs = pickle.load(xcorrs_file)
         except:
             crosscorrs = None
@@ -465,6 +460,7 @@ if __name__ == "__main__":
                 mm3.information("Calculating cross correlations for peak %d." % peak_id)
 
                 # linear loop
+                # also change test `result.successful()` below if uncomment
                 #crosscorrs[fov_id][peak_id] = mm3.channel_xcorr(fov_id, peak_id)
 
                 # # multiprocessing verion
@@ -478,8 +474,8 @@ if __name__ == "__main__":
             mm3.information("Finished cross correlations for FOV %d." % fov_id)
 
         # get results from the pool and put the results in the dictionary if succesful
-        for fov_id, peaks in crosscorrs.iteritems():
-            for peak_id, result in peaks.iteritems():
+        for fov_id, peaks in crosscorrs.items():
+            for peak_id, result in peaks.items():
                 if result.successful():
                     # put the results, with the average, and a guess if the channel
                     # is full into the dictionary
@@ -491,7 +487,7 @@ if __name__ == "__main__":
 
         # write cross-correlations to pickle and text
         mm3.information("Writing cross correlations file.")
-        with open(os.path.join(ana_dir,"crosscorrs.pkl"), 'w') as xcorrs_file:
+        with open(os.path.join(ana_dir,"crosscorrs.pkl"), 'wb') as xcorrs_file:
             pickle.dump(crosscorrs, xcorrs_file, protocol=pickle.HIGHEST_PROTOCOL)
         with open(os.path.join(ana_dir,"crosscorrs.txt"), 'w') as xcorrs_file:
             pprint(crosscorrs, stream=xcorrs_file)
@@ -521,7 +517,7 @@ if __name__ == "__main__":
             for fov_id, peaks in channel_masks.items():
                 specs[fov_id] = {peak_id: 1 for peak_id in peaks.keys()}
     else:
-        mm3.information('Loading supplied specifiication file.')
+        mm3.information('Loading supplied specification file.')
         with open(specfile,'r') as fin:
             specs = yaml.load(fin)
 

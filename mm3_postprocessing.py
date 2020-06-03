@@ -1,5 +1,5 @@
 import os,sys,glob
-import cPickle as pkl
+import pickle as pkl
 import argparse
 import yaml
 import numpy as np
@@ -10,6 +10,7 @@ from scipy.stats import iqr
 
 import mm3_helpers
 from mm3_helpers import Cell
+from pathlib import Path
 
 # yaml formats
 npfloat_representer = lambda dumper,value: dumper.represent_float(float(value))
@@ -144,20 +145,20 @@ def filter_cells_old(cells, par=None): #to delete
     cellref = cells[keyref]
     cellattributes = vars(cellref).keys()
     obs_admissible = []
-   # print "Admissible keys:"
+   # print("Admissible keys:")
    # for x in cellattributes:
    #     typ = type(x)
    #     if (typ == float) or (typ == int) or (typ == list):
-   #         print "{:<4s}{:<s}".format("",key)
+   #         print("{:<4s}{:<s}".format("",key))
 
     # start by selecting all cells
     idx = [True for key in cells.keys()]
     for obs in par:
-        #print "Observable \'{}\'".format(obs)
+        #print("Observable \'{}\'".format(obs))
         if not obs in par:
-            print "Key \'{}\' not in admissible list of keys:".format(obs)
+            print("Key \'{}\' not in admissible list of keys:".format(obs))
             for y in obs_admissible:
-                print "{:<4s}{:<s}".format("",y)
+                print("{:<4s}{:<s}".format("",y))
             continue
 
         # make scalar array that will undergo selection
@@ -178,7 +179,7 @@ def filter_cells_old(cells, par=None): #to delete
         par[obs]['median']=np.median(X)
         par[obs]['iqr']=iqr(X)
         par[obs]['std']=np.std(X)
-        #print "{}: xlo = {:.4g}    xhi = {:.4g}\n".format(obs,xlo,xhi)
+        #print("{}: xlo = {:.4g}    xhi = {:.4g}\n".format(obs,xlo,xhi))
 
     # return new dict
     return {key: cells[key] for key in np.array(cells.keys())[idx]}
@@ -193,20 +194,20 @@ def filter_cells(cells, par=None):
     cellref = cells[keyref]
     cellattributes = vars(cellref).keys()
     obs_admissible = []
-   # print "Admissible keys:"
+   # print("Admissible keys:")
    # for x in cellattributes:
    #     typ = type(x)
    #     if (typ == float) or (typ == int) or (typ == list):
-   #         print "{:<4s}{:<s}".format("",key)
+   #         print("{:<4s}{:<s}".format("",key))
 
     # start by selecting all cells
     idx = [True for key in cells.keys()]
     for obs in par:
-        #print "Observable \'{}\'".format(obs)
+        #print("Observable \'{}\'".format(obs))
         if not obs in par:
-            print "Key \'{}\' not in admissible list of keys:".format(obs)
+            print("Key \'{}\' not in admissible list of keys:".format(obs))
             for y in obs_admissible:
-                print "{:<4s}{:<s}".format("",y)
+                print("{:<4s}{:<s}".format("",y))
             continue
 
         # make scalar array that will undergo selection
@@ -225,7 +226,7 @@ def filter_cells(cells, par=None):
         par[obs]['median']=np.median(X)
         par[obs]['iqr']=iqr(X)
         par[obs]['std']=np.std(X)
-        #print "{}: xlo = {:.4g}    xhi = {:.4g}\n".format(obs,xlo,xhi)
+        #print("{}: xlo = {:.4g}    xhi = {:.4g}\n".format(obs,xlo,xhi))
 
     # return new dict
     return {key: cells[key] for key in np.array(cells.keys())[idx]}
@@ -295,8 +296,8 @@ def _todict(matobj):
 ################################################
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(prog="Processing of MM3 pickle file.")
-    parser.add_argument('pklfile', metavar='cell pickle file', type=file, help='Pickle file containing the cell dictionary.')
-    parser.add_argument('-f', '--paramfile',  type=file, required=True, help='Yaml file containing parameters.')
+    parser.add_argument('pklfile', metavar='cell pickle file', type=str, help='Pickle file containing the cell dictionary.')
+    parser.add_argument('-f', '--paramfile',  type=str, required=True, help='Yaml file containing parameters.')
     parser.add_argument('--trunc',  nargs=2, metavar='t', type=int, help='Make a truncated pkl file for debugging purpose.')
     parser.add_argument('--nofilters',  action='store_true', help='Disable the filters.')
     parser.add_argument('--nocomputations',  action='store_true', help='Disable the computation of extra-quantities.')
@@ -305,15 +306,20 @@ if __name__ == "__main__":
     parser.add_argument('--cellcyclefile',  type=str, help='Matlab file a cell dictionary.')
     parser.add_argument('--complete_cc',  action='store_true', help='If passed, remove cells not mapped to cell cycle through a initiation --> division correspondence.')
     namespace = parser.parse_args(sys.argv[1:])
-    paramfile = namespace.paramfile.name
-    allparams = yaml.load(namespace.paramfile)
-    data = pkl.load(namespace.pklfile)
-    dataname = os.path.splitext(os.path.basename(namespace.pklfile.name))[0]
-    ddir = os.path.dirname(namespace.pklfile.name)
-    print "{:<20s}{:<s}".format('data dir', ddir)
+    paramfile = Path(namespace.paramfile)
+    if not paramfile.is_file():
+        raise ValueError()
+    with open(str(paramfile)) as fin:
+        allparams = yaml.load(fin)
+    pklfile = Path(namespace.pklfile)
+    with open(str(pklfile), 'rb') as fin:
+        data = pkl.load(fin)
+    dataname = os.path.splitext(os.path.basename(str(namespace.pklfile)))[0]
+    ddir = os.path.dirname(namespace.pklfile)
+    print("{:<20s}{:<s}".format('data dir', ddir))
 
     ncells = len(data)
-    print "ncells = {:d}".format(ncells)
+    print("ncells = {:d}".format(ncells))
 
     # first initialization of parameters
     params = allparams['filters']
@@ -322,9 +328,9 @@ if __name__ == "__main__":
 ################################################
 # Make test set
 ################################################
-    print print_time(), "Writing test file..."
+    print(print_time()), "Writing test file..."
     if namespace.trunc != None:
-        print namespace.trunc
+        print(namespace.trunc)
         n0 = namespace.trunc[0]
         n1 = namespace.trunc[1]
 
@@ -336,7 +342,7 @@ if __name__ == "__main__":
         fileout = os.path.join(ddir, dataname + '_test_n{:d}-{:d}'.format(n0,n1) + '.pkl')
         with open(fileout,'w') as fout:
             pkl.dump(datanew, fout)
-        print "{:<20s}{:<s}".format('fileout', fileout)
+        print("{:<20s}{:<s}".format('fileout', fileout))
 
         sys.exit('Test pkl file written. Exit')
 
@@ -344,16 +350,18 @@ if __name__ == "__main__":
 # Compulsory filtering
 ################################################
     # Remove cells without mother or without daughters
-    print print_time(), "Removing cells without mother or daughters..."
+    print(print_time()), "Removing cells without mother or daughters..."
     data_new = {}
     for key in data:
         cell = data[key]
+        print(cell.parent, cell.daughters)
         if (not (cell.parent is None)) and (not (cell.daughters is None)):
+            print(key)
             data_new[key] = cell
     data = data_new
 
     ncells = len(data)
-    print "ncells = {:d}".format(ncells)
+    print("ncells = {:d}".format(ncells))
     suffix += ["complete"]
 
 ################################################
@@ -364,7 +372,7 @@ if __name__ == "__main__":
     #required_attr = {'initiation_mass_n':'unit_size', 'termination_time':'termination_time', 'initiation_time':'initiation_time'}
     required_attr = {'initiation_mass':'unit_size', 'termination_time':'termination_time', 'initiation_time':'initiation_time', 'noc': 'n_oc' }
     if not (namespace.cellcycledir is None):
-        print print_time(), 'Loading cell cycle information'
+        print(print_time()), 'Loading cell cycle information'
         if not os.path.isdir(namespace.cellcycledir):
             sys.exit('Directory doesn\'t exist: {}'.format(namespace.cellcycledir))
 
@@ -376,7 +384,7 @@ if __name__ == "__main__":
             ccdata = loadmat(cellcyclefile)['cell_list']
             for key in ccdata.keys():
                 if not (key in data):
-                    print "Skipping cell from cell cycle data: {}".format(key)
+                    print("Skipping cell from cell cycle data: {}".format(key))
                     continue
 
                 cell_cc = ccdata[key]
@@ -394,14 +402,14 @@ if __name__ == "__main__":
             data = {key: data[key] for key in data.keys() if has_cc(data[key])}
 
             ncells = len(data)
-            print "ncells = {:d}".format(ncells)
+            print("ncells = {:d}".format(ncells))
             suffix.append("completecc")
 
     elif not (namespace.cellcyclefile is None):
         ccdata = loadmat(namespace.cellcyclefile)['complete_cells_cell_cycle']
         for key in ccdata.keys():
             if not (key in data):
-                print "Skipping cell from cell cycle data: {}".format(key)
+                print("Skipping cell from cell cycle data: {}".format(key))
                 continue
 
             cell_cc = ccdata[key]
@@ -423,7 +431,7 @@ if __name__ == "__main__":
             data = {key: data[key] for key in cellids if has_cc(data[key])}
 
             ncells = len(data)
-            print "ncells = {:d}".format(ncells)
+            print("ncells = {:d}".format(ncells))
             suffix.append("completecc")
 
 ################################################
@@ -431,7 +439,7 @@ if __name__ == "__main__":
 ################################################
     # second initialization of parameters
     if (not namespace.nocomputations):
-        print print_time(), "Compute extra-quantities..."
+        print(print_time()), "Compute extra-quantities..."
         # cell cycle quantities
         ## general
         for key in data.keys():
@@ -478,7 +486,7 @@ if __name__ == "__main__":
             try:
                 mpf = float(params['min_per_frame'])
             except KeyError:
-                print "Could not read the min_per_frame parameter. Default to mpf=1"
+                print("Could not read the min_per_frame parameter. Default to mpf=1")
                 mpf = 1.
 
             for key in data:
@@ -506,7 +514,7 @@ if __name__ == "__main__":
             try:
                 upp = float(params['um_per_pixel'])
             except KeyError:
-                print "Could not read the um_per_pixel parameter. Default to upp=1."
+                print("Could not read the um_per_pixel parameter. Default to upp=1.")
                 upp = 1.
             for key in data:
                 cell = data[key]
@@ -583,48 +591,48 @@ if __name__ == "__main__":
         suffix.append("filtered")
         params = allparams['filters']
         # Generation index
-        print print_time(), "Selecting cell indexes..."
+        print(print_time()), "Selecting cell indexes..."
         try:
             labels_selection=params['cell_generation_index']
-            print "Labels: ", labels_selection
+            print("Labels: ", labels_selection)
             data = filter_by_generation_index(data, labels=labels_selection)
             ncells = len(data)
-            print "ncells = {:d}".format(ncells)
+            print("ncells = {:d}".format(ncells))
             suffix += ["labels" + "".join(["{:d}".format(l) for l in labels_selection])]
         except KeyError:
-            print "Not applied."
+            print("Not applied.")
 
         # FOVs and peaks
-        print print_time(), "Selecting by FOVs and peaks..."
+        print(print_time()), "Selecting by FOVs and peaks..."
         try:
             fovpeak = params['fovpeak']
             data = filter_by_fovs_peaks(data, fovpeak)
             ncells = len(data)
-            print "ncells = {:d}".format(ncells)
+            print("ncells = {:d}".format(ncells))
             suffix += ["fovpeak"]
 
         except KeyError:
-            print "Not applied."
+            print("Not applied.")
 
         # continuous lineages
         ## list all lineages
-        print print_time(), "Selecting by continuous lineages..."
+        print(print_time()), "Selecting by continuous lineages..."
         #lineages = get_lineages_mother_cells(data)
         lineages = get_lineages_all_cells(data)
         bname = "{}_lineages.pkl".format(dataname)
         fileout = os.path.join(ddir,bname)
-        with open(fileout,'w') as fout:
-            pkl.dump(lineages, fout)
-        print "{:<20s}{:<s}".format("fileout",fileout)
+        with open(fileout,'wb') as fout:
+            pkl.dump(lineages, fout, protocol=pkl.HIGHEST_PROTOCOL)
+        print("{:<20s}{:<s}".format("fileout",fileout))
 
         ## keep only long enough lineages
         try:
             lineages = select_lineages(lineages, **params['lineages']['args'])
             bname = "{}_lineages_selection_min{:d}.pkl".format(dataname, params['lineages']['args']['min_gen'])
             fileout = os.path.join(ddir,bname)
-            with open(fileout,'w') as fout:
-                pkl.dump(lineages, fout)
-            print "{:<20s}{:<s}".format("fileout",fileout)
+            with open(fileout,'wb') as fout:
+                pkl.dump(lineages, fout, protocol=pkl.HIGHEST_PROTOCOL)
+            print("{:<20s}{:<s}".format("fileout",fileout))
         except KeyError:
             pass
 
@@ -637,26 +645,26 @@ if __name__ == "__main__":
                 data_new = {key: data[key] for key in selection}
                 data = data_new
                 ncells = len(data)
-                print "ncells = {:d}".format(ncells)
+                print("ncells = {:d}".format(ncells))
                 suffix += ["continuouslineages"]
-        except KeyError, e :
-            print e
+        except (KeyError,) as e :
+            print(e)
 
         for key in data:
             cell = data[key]
 
         # cutoffs filtering
         if ('cutoffs' in params):
-            print print_time(), "Applying cutoffs filtering..."
+            print(print_time()), "Applying cutoffs filtering..."
             data = filter_cells(data, params['cutoffs'])
             suffix += ["cutoffs"]
             ncells = len(data)
-            print "ncells = {:d}".format(ncells)
+            print("ncells = {:d}".format(ncells))
 
 ################################################
 # write
 ################################################
-    print print_time(), "Writing new datafile..."
+    print(print_time()), "Writing new datafile..."
     ncells = len(data)
     if (ncells == 0 ):
         sys.exit("Filtered data is empty!")
@@ -664,15 +672,15 @@ if __name__ == "__main__":
     filename = dataname + "_" + "_".join(suffix)
     fileout = os.path.join(ddir, filename + '.pkl')
 
-    with open(fileout,'w') as fout:
-        pkl.dump(data, fout)
-    print "{:<20s}{:<s}".format('fileout', fileout)
+    with open(fileout,'wb') as fout:
+        pkl.dump(data, fout, protocol=pkl.HIGHEST_PROTOCOL)
+    print("{:<20s}{:<s}".format('fileout', fileout))
 
 # copy parameters
     dest = os.path.join(ddir, os.path.basename(paramfile))
     with open(dest,'w') as fout:
         yaml.dump(allparams,stream=fout,default_flow_style=False, tags=None)
-    print "{:<20s}{:<s}".format('fileout', dest)
+    print("{:<20s}{:<s}".format('fileout', dest))
 
     if (not namespace.notextify):
         # write text versions
@@ -698,7 +706,7 @@ if __name__ == "__main__":
             elif (type(sa) == str):
                 scalar_attributes_fmt.append('%-30s')
             else:
-                print type(sa)
+                print(type(sa))
                 sys.exit("Problem in text formatting with attribute: {}".format(sa))
 
         header = ",".join(scalar_attributes)
@@ -708,12 +716,12 @@ if __name__ == "__main__":
             fout.write('#'+header+'\n')
             for i in range(len(data_array)):
                 fout.write("".join(scalar_attributes_fmt) %tuple(data_array[i]) + '\n')
-        print "{:<20s}{:<s}".format('fileout', fileout)
+        print("{:<20s}{:<s}".format('fileout', fileout))
 
 
 
 #try:
 #    shutil.copyfile(paramfile,dest)
-#    print "{:<20s}{:<s}".format('fileout', dest)
+#    print("{:<20s}{:<s}".format('fileout', dest))
 #except shutil.Error:
 #    pass

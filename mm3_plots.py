@@ -86,7 +86,7 @@ def cells2dict(Cells):
     Take a dictionary of Cells and returns a dictionary of dictionaries
     '''
 
-    Cells_dict = {cell_id : vars(cell) for cell_id, cell in Cells.iteritems()}
+    Cells_dict = {cell_id : vars(cell) for cell_id, cell in Cells.items()}
 
     return Cells_dict
 
@@ -151,7 +151,7 @@ def find_cells_born_before(Cells, born_before=None):
     if born_before == None:
         return Cells
 
-    fCells = {cell_id : Cell for cell_id, Cell in Cells.iteritems() if Cell.birth_time <= born_before}
+    fCells = {cell_id : Cell for cell_id, Cell in Cells.items() if Cell.birth_time <= born_before}
 
     return fCells
 
@@ -163,7 +163,7 @@ def find_cells_born_after(Cells, born_after=None):
     if born_after == None:
         return Cells
 
-    fCells = {cell_id : Cell for cell_id, Cell in Cells.iteritems() if Cell.birth_time >= born_after}
+    fCells = {cell_id : Cell for cell_id, Cell in Cells.items() if Cell.birth_time >= born_after}
 
     return fCells
 
@@ -190,7 +190,7 @@ def organize_cells_by_channel(Cells, specs):
 
     # remove peaks and that do not contain cells
     remove_fovs = []
-    for fov_id, peaks in Cells_by_peak.iteritems():
+    for fov_id, peaks in Cells_by_peak.items():
         remove_peaks = []
         for peak_id in peaks.keys():
             if not peaks[peak_id]:
@@ -229,7 +229,7 @@ def filter_by_stat(Cells, center_stat='mean', std_distance=3):
     # add filtered cells to dict
     fCells = {} # dict to hold filtered cells
 
-    for cell_id, Cell in Cells.iteritems():
+    for cell_id, Cell in Cells.items():
         benchmark = 0 # this needs to equal 6, so it passes all tests
 
         for label in stats_columns:
@@ -273,15 +273,15 @@ def find_continuous_lineages(Lineages, t1=0, t2=1000):
     # This is a mirror of the lineages dictionary, just for the continuous cells
     Continuous_Lineages = {}
 
-    for fov, peaks in Lineages.iteritems():
+    for fov, peaks in Lineages.items():
        # print("fov = {:d}".format(fov))
         # Create a dictionary to hold this FOV
         Continuous_Lineages[fov] = {}
 
-        for peak, Cells in peaks.iteritems():
+        for peak, Cells in peaks.items():
            # print("{:<4s}peak = {:d}".format("",peak))
             # sort the cells by time in a list for this peak
-            cells_sorted = [(cell_id, cell) for cell_id, cell in Cells.iteritems()]
+            cells_sorted = [(cell_id, cell) for cell_id, cell in Cells.items()]
             cells_sorted = sorted(cells_sorted, key=lambda x: x[1].birth_time)
 
             # Sometimes there are not any cells for the channel even if it was to be analyzed
@@ -357,7 +357,7 @@ def find_lineages_of_length(Cells, n_gens=5, remove_ends=False):
 
     filtered_cells = []
 
-    for cell_id, cell_tmp in Cells.iteritems():
+    for cell_id, cell_tmp in Cells.items():
         # find the last continuous daughter
         last_daughter = find_last_daughter(cell_tmp, Cells)
 
@@ -391,8 +391,8 @@ def lineages_to_dict(Lineages):
 
     Cells = {}
 
-    for fov, peaks in Lineages.iteritems():
-        for peak, cells in peaks.iteritems():
+    for fov, peaks in Lineages.items():
+        for peak, cells in peaks.items():
             Cells.update(cells)
 
     return Cells
@@ -401,10 +401,10 @@ def calculate_pole_age(Cells):
     '''Finds the pole age of each end of the cell. Adds this information to the cell object.'''
 
     # run through once and set up default
-    for cell_id, cell_tmp in Cells.iteritems():
+    for cell_id, cell_tmp in Cells.items():
         cell_tmp.poleage = None
 
-    for cell_id, cell_tmp in Cells.iteritems():
+    for cell_id, cell_tmp in Cells.items():
         # start from r1 cells which have r1 parents in the list.
         # these cells are old pole mothers.
     #     if cell_tmp.parent in Cells and cell_tmp.birth_label == 1:
@@ -480,7 +480,7 @@ def channel_locations(channel_file, filetype='specs'):
 
     # Using the channel masks
     if filetype == 'channel_masks':
-        for key, values in channel_file.iteritems():
+        for key, values in channel_file.items():
         # print('FOV {} has {} channels'.format(key, len(values)))
             y = (np.ones(len(values))) + key - 1
             x = values.keys()
@@ -488,7 +488,7 @@ def channel_locations(channel_file, filetype='specs'):
 
     # Using the specs file
     if filetype == 'specs':
-        for key, values in channel_file.iteritems():
+        for key, values in channel_file.items():
             y = list((np.ones(len(values))) + key - 1)
             x = values.keys()
 
@@ -743,7 +743,7 @@ def plot_traces(Cells, trace_limit=1000):
         cell_id_subset = sample(list(Cells), trace_limit)
         Cells = {cell_id : Cells[cell_id] for cell_id in cell_id_subset}
 
-    for cell_id, Cell in Cells.iteritems():
+    for cell_id, Cell in Cells.items():
 
         # ax[0].plot(Cell.times, Cell.lengths, 'b-', lw=.5, alpha=0.25)
         ax[1].plot(Cell.times_w_div, Cell.lengths_w_div, 'b-', lw=.5, alpha=0.5)
@@ -810,7 +810,7 @@ def saw_tooth_plot(Lineages, FOVs=None, peaks=None, tif_width=2000, mothers=True
         # record max div length for whole FOV to set y lim
         max_div_length = 0
 
-        for r, (peak, lin) in enumerate(Lineages[fov].iteritems()):
+        for r, (peak, lin) in enumerate(Lineages[fov].items()):
             # append axes
             ax = fig.add_subplot(gs[r,0])
 
@@ -825,7 +825,7 @@ def saw_tooth_plot(Lineages, FOVs=None, peaks=None, tif_width=2000, mothers=True
             last_length = None
 
             # turn it into a list so it retains time order
-            lin = [(cell_id, cell) for cell_id, cell in lin.iteritems()]
+            lin = [(cell_id, cell) for cell_id, cell in lin.items()]
             # sort cells by birth time for the hell of it.
             lin = sorted(lin, key=lambda x: x[1].birth_time)
 
@@ -898,13 +898,13 @@ def saw_tooth_plot_fov(Lineages, FOVs=None, tif_width=2000, mothers=True):
         # record max div length for whole FOV to set y lim
         max_div_length = 0
 
-        for peak, lin in Lineages[fov].iteritems():
+        for peak, lin in Lineages[fov].items():
             # this is to map mothers to daugthers with lines
             last_div_time = None
             last_length = None
 
             # turn it into a list so it retains time order
-            lin = [(cell_id, cell) for cell_id, cell in lin.iteritems()]
+            lin = [(cell_id, cell) for cell_id, cell in lin.items()]
             # sort cells by birth time for the hell of it.
             lin = sorted(lin, key=lambda x: x[1].birth_time)
 
@@ -967,7 +967,7 @@ def saw_tooth_ring_plot(Cells):
     last_length = None
 
     # turn it into a list so it retains time order
-    lin = [(cell_id, cell) for cell_id, cell in Cells.iteritems()]
+    lin = [(cell_id, cell) for cell_id, cell in Cells.items()]
     # sort cells by birth time for the hell of it.
     lin = sorted(lin, key=lambda x: x[1].birth_time)
 
