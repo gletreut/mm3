@@ -3,7 +3,7 @@ scipy
 matplotlib
 seaborn
 Pillow
-scikit-image
+scikit-image==0.16.2
 pyYAML
 pandas
 pims_nd2
