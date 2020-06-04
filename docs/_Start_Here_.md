@@ -73,6 +73,9 @@ The working directory now contains:
 
 mm3_ChannelPicker.py identifies all growth channels, regardless of if they contain or do not contain cells. mm3_ChannelPicker.py first attempts to guess, and then presents the user with a GUI to decide which channels should be analyzed, which channels should be ignored, and which channels should be used as empty channels during subtraction. This information is contained within the specs.pkl file. See **mm3_ChannelPicker guide** for usage and details.
 
+By default, the `mm3_ChannelPicker.py` script will open a GUI for the user to manually choose channels to analyze, discard and use as empty channels for each FOV. To run the channel-picking script non-interactively, use the `-i` option. If you use a docker image to run MM3, you will need to run this script non-interactively, unless you figure a way to bind your graphical interface to the docker container. When run non-interactively, the user should copy the file `./analysis/specs.yaml` and edit it with the following conventions: use a value of +1 to analyze a channel, use a value of -1 to discard a channel, use a value of 0 to designate an empty channel. This can be done by inspecting the PDF files in `./analysis/fovs`, which plot the state of the channels at 2 time points in the experiment and use a color code reflecting the channel picking in the last `specs.yaml` file that was used as input in the script. Once the channel-picking is done, the `mm3_ChannelPicker.py` script can be run again using the option: `-s path/to/specs.yaml`. In addition, using the option `-c` will re-use the cross-correlation coefficients computed at the last execution, which will speed significantly the execution.
+
+
 The working directory is now:
 ```
 .
